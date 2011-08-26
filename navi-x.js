@@ -48,10 +48,6 @@
   
   var video_link = '';
   
-  var nxserver_URL = 'http://navix.turner3d.net';
-  
-  var nxserver='';
-  
 //settings 
 
   plugin.createService("Navi-X", "navi-x:start", "tv", true,
@@ -1345,161 +1341,6 @@ function CMediaItem()
     }
     
     
-/*--------------------------------------------------------------------
-# Description: Playlist item class. 
-/*------------------------------------------------------------------*/
-function CHistorytem()
-{
-    this.index = 0;
-    this.mediaitem = CMediaItem;
-}
-
-
-/*--------------------------------------------------------------------
-# Description: CServer class
-/*------------------------------------------------------------------*/
-function CServer()
-{
-    //public member of CServer class.
-    this.user_id = '';
-    this.login = CServer_login;
-    this.logout = CServer_logout;
-    this.is_user_logged_in = CServer_is_user_logged_in;
-}
-
-    /*--------------------------------------------------------------------
-    # Description: -
-    # Parameters : -
-    # Return     : -
-    /*------------------------------------------------------------------*/            
-    function CServer_login()
-    {
-        while(1)
-       {
-        var do_query = false;
-        var credentials = plugin.getAuthCredentials("Navi-X", "Login", false);
-    
-        if(!credentials) {
-            if (!do_query)
-            {
-                do_query = true;
-                continue;
-            }
-            return "No credentials";
-        }
-
-        if(credentials.rejected)
-        {
-            return "Rejected by user";
-        }
-                   
-        //login to the Navi-X server
-        //this.user_id = this.nxLogin(login.username, login.password)
-        this.user_id = this.nxLogin(credentials.username, credentials.password)
-        if (this.user_id == '')
-        {
-            //failed
-            return -1
-        }
-
-        showtime.print("Login to the NXServer was successful");           
-        //success   
-        return 0;
-       }
-    }
-
-    /*--------------------------------------------------------------------
-    # Description: Login function for Navi-Xtreme login.
-    # Parameters : username: user name
-    #              password: user password
-    # Return     : blowfish-encrypted string identifying the user for 
-    #              saving locally, or an empty string if the login failed.
-    /*------------------------------------------------------------------*/  
-    function CServer_nxLogin(username, password)
-    {
-        var v = showtime.httpPost("http://navix.turner3d.net/login/", {
-            username: username,	
-            password: password
-        }, {
-            action: "takelogin"
-        });
-      
-        return v.toString();
-    }
-
-    /*--------------------------------------------------------------------
-    # Description: -
-    # Parameters : -
-    # Return     : -
-    /*------------------------------------------------------------------*/                     
-    function CServer_logout()
-    {
-        //empty the user ID
-        this.user_id=''
-    }
-
-    /*--------------------------------------------------------------------
-    # Description: -
-    # Parameters : -
-    # Return     : -
-    /*------------------------------------------------------------------*/             
-    function CServer_is_user_logged_in()
-    {
-        if (this.user_id != '')
-            return true;  
-        return false;
-    }
-
-    /*--------------------------------------------------------------------
-    # Description: -
-    # Parameters : -
-    # Return     : -
-    /*------------------------------------------------------------------*/            
-    /*def rate_item(this, mediaitem):    
-        rate = CDialogRating("CRatingskin.xml", os.getcwd())
-        rate.doModal()
-        if rate.state != 0:
-            return -2
-                
-        if this.is_user_logged_in() == False:
-            dialog = xbmcgui.Dialog()
-            dialog.ok(" Error", "You are not logged in.")
-            return -1
-
-        #login to the Navi-X server
-        result = this.nxrate_item(mediaitem, rate.rating)
-
-    /*--------------------------------------------------------------------
-    # Description: -
-    # Parameters : mediaitem: CMediaItem instance to rate
-    #              rating = value [0-5]
-    # Return     : -
-    # API Return : Success: value [0-5] representing the new average rating
-    #              Failure: error message string
-    /*------------------------------------------------------------------*/      
-    /*def nxrate_item(this, mediaitem, rating):  
-        #print "Rating: " + str(rating) + " " + mediaitem.URL
-        #return 0
-                   
-        #rate mediaitem
-        result=getRemote('http://navix.turner3d.net/rate/',{
-            'method':'post',
-            'postdata':urllib.urlencode({'url':mediaitem.URL,'rating':rating}),
-            'cookie':'nxid='+nxserver.user_id
-        })['content']
-
-        dialog = xbmcgui.Dialog()                            
-        p=re.compile('^\d$')
-        match=p.search(result)
-        if match:
-            dialog.ok(" Rate", "Rating Successful.")
-            mediaitem.rating=result
-        else:
-            dialog.ok(" Rate", result)
-
-        return 0*/
-    
-    
 function CURLLoader()
 {
     this.parent=0;
@@ -1559,22 +1400,6 @@ function CURLLoader()
     var lparse=new RegExp('^([^ =]+)([ =])(.+)$');
     var ifparse=new RegExp('^([^<>=!]+)\s*([!<>=]+)\s*(.+)$');
     var def_agent='Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.9.0.4) Gecko/2008102920 Firefox/3.0.4';
-    /*var v_defaults={
-	'htmRaw':'',
-	's_url':'',
-	'regex':'',
-	's_method':'get',
-	's_action':'read',
-	's_agent':def_agent,
-	's_referer':'',
-	's_cookie':'',
-	's_postdata':'',
-	'url':'',
-	'swfplayer':'',
-	'playpath':'',
-	'agent':'',
-	'pageurl':''
-    };*/
     
     /*--------------------------------------------------------------------
     # Description: This class is used to retrieve media playback
@@ -2337,33 +2162,7 @@ function NIPLVars(){
     this.reset=NIPLVars_reset;
     
     this.data=this.defaults();
-    /*this.htmRaw='';
-    this.s_url='';
-    this.regex='';
-    this.s_method='get';
-    this.s_action='read';
-    this.s_agent='Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.9.0.4) Gecko/2008102920 Firefox/3.0.4';
-    this.s_referer='';
-    this.s_cookie='';
-    this.s_postdata='';
-    this.url='';
-    this.swfplayer='';
-    this.playpath='';
-    this.agent='';
-    this.pageurl='';
-    this.app='';
-    this.swfVfy='';
-    this.nookie_expires='0';*/
 }
-
-    /*def __getitem__(self, key):
-        try:
-            return self.data[key]
-        except KeyError:
-            return ''
-
-    def __setitem__(self,key,value):
-        self.data[key]=value*/
 
     function NIPLVars_defaults(){
         return {
