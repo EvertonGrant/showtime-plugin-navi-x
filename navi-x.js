@@ -62,8 +62,12 @@
 			     "Navi-X. Learn more on http://website.navi-x.org/ \n" + 
 				 "Plugin developed by facanferff (Fábio Canada) \n");
 
-    settings.createBool("backgroundEnabled", "Background", false, function(v) {
+  settings.createBool("backgroundEnabled", "Background", false, function(v) {
     service.backgroundEnabled = v;
+  });
+
+  settings.createBool("processorDebug", "Processor Debug", false, function(v) {
+    service.processorDebug = v;
   });
   
 function startPage(page) {
@@ -122,8 +126,6 @@ plugin.addURI(PREFIX + ":video:(.*):(.*):(.*)", function(page, title, url, proce
     else
         video_link = unescape(url);
     
-    showtime.print(video_link);
-    
     page.source = "videoparams:" + showtime.JSONEncode({      
         title: unescape(title),     
         sources: [
@@ -144,8 +146,6 @@ plugin.addURI(PREFIX + ":playlist:(.*):(.*)", function(page, type, url) {
     
     var mediaitem = new CMediaItem();
     mediaitem.type = type;
-    showtime.print("Type: "+type);
-    showtime.print("URL: "+url);
     
     result = ParsePlaylist(page, unescape(url), mediaitem, 0, true, "CACHING");
     showtime.print("Parsing playlist operation result: " + result);
@@ -273,11 +273,8 @@ function getFileExtension(filename){
             while(title.indexOf('[COLOR=FF') != -1)
             {
                 var color_index = title.indexOf('[COLOR=FF');
-                showtime.print(color_index);
                 var color = title.slice(color_index+9, title.indexOf(']', color_index));
-                showtime.print(color);
                 var text = title.slice(title.indexOf(']', color_index)+1, title.indexOf('[/COLOR]'));
-                showtime.print(text);
                 title = title.toString().replace(title.toString().slice(color_index, title.indexOf(']', color_index)+1), '');
                 title = title.toString().replace(title.toString().slice(color_index, title.indexOf('[/COLOR]')+8), '');
                 var tmp_title1 = title.slice(0, color_index);
@@ -1452,7 +1449,7 @@ function CURLLoader()
             phase=0;
             exflag=false;
             phase1complete=false;
-            verbose=1;
+            verbose=service.processorDebug;
             proc_args='';
             inst_prev='';
             headers={};
