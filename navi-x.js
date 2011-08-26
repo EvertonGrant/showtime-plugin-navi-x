@@ -42,7 +42,7 @@
   var SubVersion='7';
   var plxVersion = '8';
   
-  var background_image1 = plugin.path + 'background1.jpg';
+  var background_image1 = plugin.path + 'resources/background1.jpg';
   
   var result = -1;
   
@@ -50,8 +50,21 @@
   
 //settings 
 
-  plugin.createService("Navi-X", "navi-x:start", "tv", true,
+  var service = plugin.createService("Navi-X", "navi-x:start", "tv", true,
 			   plugin.path + "logo.png");
+                           
+  var settings = plugin.createSettings("Navi-X",
+					  plugin.path + "logo.png",
+					 "Navi-X: Online Media Resources");
+
+  settings.createInfo("info",
+			     plugin.path + "logo.png",
+			     "Navi-X. Learn more on http://website.navi-x.org/ \n" + 
+				 "Plugin developed by facanferff (Fábio Canada) \n");
+
+    settings.createBool("backgroundEnabled", "Background", false, function(v) {
+    service.backgroundEnabled = v;
+  });
   
 function startPage(page) {
     /*Create playlist object contains the parsed playlist data. The this.list control displays
@@ -279,15 +292,13 @@ function getFileExtension(filename){
                 page.metadata.title = new showtime.RichText(title_final+'<font color="#ffffff" size="2">'+tmp_title3+'</font>');
 
             //set the background image   
-            //if (this.disable_background == 'false')
-                //var m = this.playlist.background;
-            /*else:
-                m = 'default'*/
-            
-            var m = this.playlist.background;
-            if (m == "default" || m == "previous")
-                m = background_image1;
-            page.metadata.background = m;
+            if (service.backgroundEnabled == "1") {
+                var m = this.playlist.background;
+                if (m == "default" || m == "previous")
+                    m = background_image1;
+                page.metadata.background = m;
+            }
+                
             
             /*else if (m != 'previous') //URL to image located elsewhere
                 ext = getFileExtension(m)
