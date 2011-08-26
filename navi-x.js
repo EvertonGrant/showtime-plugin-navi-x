@@ -2288,11 +2288,7 @@ function getRemote(url,args){
         
         var response=req.toString();
         
-        var cookies={
-            'pp': '1314303417',
-            'PHPSESSID': 'lpor8mfakaujs6ni8gf6tsplt1',
-            'ppt': '1'
-        };
+        var cookies={};
         
         oret={
       	    'headers':req.headers,
@@ -2405,40 +2401,6 @@ function NIPLVars(){
         else{
             for each (var ke in v_defaults)
                 this.data[ke]=v_defaults[ke];
-        }
-    }
-    
-    
-    
-    /// NIPL FUNCTIONS
-    //String operations NIPL Script
-    function checkString(line) {
-        if (line.slice(0,1) == "'") return true;
-        else if (line.slice(0,2) == "\'") return true;
-        else return false;
-    }
-
-    function getValue(key) {
-        var varsplit = key.split('.');
-        if (this.checkString(key)) return key.slice(1);
-        else if (varsplit.length > 1) {
-            if (varsplit[0] in this.__collectable__) {
-                try {
-                    return vars(this)[varsplit[0]][varsplit[1]].toString();
-                }
-                catch(err) {
-                    return '';
-                }
-            }
-            else return '';
-        }
-        else {
-            try {
-                return vars(this)[var].toString();
-            }
-            catch(err) { 
-                return '';
-            }
         }
     }
     
