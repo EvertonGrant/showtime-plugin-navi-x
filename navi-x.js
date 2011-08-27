@@ -90,6 +90,8 @@ function startPage(page) {
     page.type = "directory";
     page.contents = "items";
     
+    result = -1;
+    
     if (result != 0)
     {
         //Load the Navi-X home page
