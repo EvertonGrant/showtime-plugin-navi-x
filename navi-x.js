@@ -66,7 +66,7 @@
     service.backgroundEnabled = v;
   });
 
-  settings.createBool("processorDebug", "Processor Debug", false, function(v) {
+  settings.createInt("processorDebug", "Background", 0, 0, 4, 1, '', function(v) {
     service.processorDebug = v;
   });
   
@@ -93,7 +93,7 @@ function startPage(page) {
 
     page.appendItem(PREFIX + ':playlist:' + 'playlist:' + escape('http://www.navi-x.org/playlists/podcasts/podcasts.plx'),"directory", {
                             title: 'Test'
-                        }); 
+                        });
     
     // Not working yet - Login to NXServer
     /*nxserver = new CServer();
@@ -1813,13 +1813,10 @@ function CURLLoader()
                                 match=lparse.exec(arg);
                                 if (!match){
                                     showtime.print("Processor syntax error: "+line);
-                                    //SetInfoText("")
                                     return -1;
                                 }
                                 ke=match[1];
                                 va=match[3];
-                                /*for (var i in v.data)
-                                    showtime.print(i);*/
                                 var oldtmp=v.data[ke];
                                 if (va.slice(0,1)=="'")
                                     v.data[ke]=v.data[ke]+va.slice(1,va.length);
@@ -1840,20 +1837,12 @@ function CURLLoader()
                                     v.data[ke]='';
                                     rep[ke]='';
                                 }
-                                /*p=new RegExp(v.data['regex']);
-                                try {
-                                    match=p.search(v.data[arg]);
-                                }
-                                catch(err){
-                                    v.data['nomatch']=1;
-                                }*/
                                 match=re_match(v.data['regex'],v.data[arg]);
 
                                 if (match){
                                     rerep='Processor match '+arg+':';
                                     for(i=1;i<match.length;i++){
                                         val=match[i];
-                                        showtime.print("1-"+val);
                                         key='v'+i.toString();
                                         rerep=rerep+"\n "+key+'='+val;
                                         v.data[key]=val;
@@ -1899,14 +1888,9 @@ function CURLLoader()
                                     showtime.print("Proc debug escape:\n old="+oldtmp+"\n new="+v.data[arg]);
                             }
                             else if (subj=='debug'){
-                                if (verbose>0){
-                                    try{
-                                        showtime.print("Processor debug "+arg+":\n "+v.data[arg]);
-                                    }
-                                    catch(err){
-                                        showtime.print("Processor debug "+arg+" - does not exist\n");
-                                    }
-                                }
+                                if (verbose>0)
+                                    showtime.print('NAVI-X NIPL: '+line+'='+v.data[arg]);
+                                    //showtime.print("Processor debug "+arg+":\n "+v.data[arg]);
                             }
                             else if (subj=='print'){
                                 if (arg.slice(0,1)=="'")
@@ -1916,7 +1900,6 @@ function CURLLoader()
                             }
                             else{
                                 showtime.print("Processor error: unrecognized method '"+subj+"'");
-                                //SetInfoText("")
                                 return -1;
                             }
                         }
