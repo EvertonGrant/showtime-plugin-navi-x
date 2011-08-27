@@ -1,7 +1,7 @@
 /**
- * Navi-X plugin for showtime version 0.1 by facanferff (Fabio Canada / facanferff@hotmail.com)
+ * Navi-X plugin for showtime version 0.1 by facanferff (Fábio Canada / facanferff@hotmail.com)
  *
- *  Copyright (C) 2011 facanferff (Fabio Canada / facanferff@hotmail.com)
+ *  Copyright (C) 2011 facanferff (Fábio Canada / facanferff@hotmail.com)
  *
  * 	ChangeLog:
  *	0.1:
@@ -48,6 +48,10 @@
   
   var video_link = '';
   
+  var nxserver_URL = 'http://navix.turner3d.net';
+  
+  var nxserver = new CServer();
+  
 //settings 
 
   var service = plugin.createService("Navi-X", "navi-x:start", "tv", true,
@@ -80,6 +84,9 @@ function startPage(page) {
     this.pl_focus = this.playlist;
     this.listview = 'default';
     
+    nxserver = new CServer();
+    showtime.print(nxserver.user_id);
+    
     page.type = "directory";
     page.contents = "items";
     
@@ -93,12 +100,7 @@ function startPage(page) {
 
     page.appendItem(PREFIX + ':playlist:' + 'playlist:' + escape('http://www.navi-x.org/playlists/podcasts/podcasts.plx'),"directory", {
                             title: 'Test'
-                        });
-    
-    // Not working yet - Login to NXServer
-    /*nxserver = new CServer();
-    nxserver.login();
-    showtime.print(nxserver.user_id);*/
+                        });              
     
     page.loading = false;
   }
@@ -483,9 +485,7 @@ function getFileExtension(filename){
                         renew=1;
                     }
                     
-                    /*var ext = getFileExtension(link);
-                    showtime.print(ext);*/
-                    var playlist_link = (m.type == 'playlist')?'playlist':'rss';
+                    var playlist_link = m.type;
                     playlist_link+=":"+escape(link);
                     if (m.type == "playlist" || m.type == 'favorite' || m.type.slice(0,3) == 'rss' ||
                         m.type == 'rss_flickr_daily' || m.type == 'directory' ||
@@ -669,24 +669,15 @@ function CPlayList()
             this.URL = mediaitem.URL;
         
         var file;
-        var cookies='platform=' + 'linux' + '; version=' + Version+'.'+SubVersion;
+        /*var cookies='platform=' + 'linux' + '; version=' + Version+'.'+SubVersion;
         
-        /*if (this.URL.indexOf(nxserver_URL) != -1)
-            cookies = cookies + '; nxid=' + nxserver.user_id*/
+        if (this.URL.indexOf(nxserver_URL) != -1)
+            cookies = cookies + '; nxid=' + nxserver.user_id
         
         var values = {'User-Agent' : 'Mozilla/4.0 (compatible;MSIE 7.0;Windows NT 6.0)',
                       'Cookie' : cookies,
-                      'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'};
-        try {
-            if (this.URL.indexOf('file://') != -1)
-                file = showtime.readFile(this.URL);
-            else if (this.URL.indexOf('http://') != -1)
-                file = showtime.httpGet(this.URL, null, values);
-        }
-        catch(err)
-        {
-            return this.URL + ": " + err;
-        }
+                      'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,*//**;q=0.8'};*/
+        file = getRemote(this.URL, {}).content;
         try{
             var data = file.toString().split(/\r?\n/);
         }
@@ -925,7 +916,7 @@ function CPlayList()
                       'Cookie' : cookies,
                       'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'};
         try {
-            file = showtime.httpGet(this.URL, null, values).toString();
+            file = showtime.httpGet(this.URL, {}, values).toString();
             var data = file.split('<item');
         }
         catch(err)
@@ -1282,7 +1273,7 @@ function CPlayList()
         }
         return;
     }
-    
+
     
 //-------------------------------- CMediaItem ----------------------------------------------------------------
     
@@ -2075,11 +2066,11 @@ function getRemote(url,args){
     }
 
     args=rdefaults;
-    /*if (url.find(nxserver_URL) != -1){
+    if (url.indexOf(nxserver_URL) != -1){
         if (args['cookie']>'')
             args['cookie']=args['cookie']+'; ';
         args['cookie']=args['cookie']+'; nxid='+nxserver.user_id;
-    }*/
+    }
     try{
         var hdr={'User-Agent':args['agent'], 'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'Referer':args['referer'], 'Cookie':args['cookie'],
             'Connection':'close'};
@@ -2097,10 +2088,15 @@ function getRemote(url,args){
     }
     var req="";
     try{
-        if (args['method'] == 'get')
-            req=showtime.httpGet(url, null, hdr);
-        else
+        if (args['method'] == 'get') {
+            if (url.indexOf('file://')!=-1)
+                req=showtime.readFile(url).toString();
+            else
+                req=showtime.httpGet(url, null, hdr);
+        }
+        else {
             req=showtime.httpPost(url, args['postdata'], null, hdr).toString();
+        }
         
         var response=req.toString();
         
@@ -2192,6 +2188,69 @@ function NIPLVars(){
             for each (var ke in v_defaults)
                 this.data[ke]=v_defaults[ke];
         }
+    }
+
+
+/*--------------------------------------------------------------------
+# Description: Text viewer
+/*------------------------------------------------------------------*/
+function CServer() {
+    //public member of CServer class.
+    this.user_id = '';
+    
+    this.login = CServer_login;
+    this.is_user_logged_in = CServer_is_user_logged_in;
+    
+    this.login();
+}
+
+    /*--------------------------------------------------------------------
+    # Description: -
+    # Parameters : -
+    # Return     : -
+    /*------------------------------------------------------------------*/            
+    function CServer_login() {
+        if(this.is_user_logged_in())      
+            return false;    
+        
+        var reason = "Login required";    
+        var do_query = false;    
+        while(1) {      
+            var credentials = plugin.getAuthCredentials("Headweb streaming service",	
+            reason, do_query);          
+            
+            if(!credentials) {	
+                if(!do_query) {	  
+                    do_query = true;	  
+                    continue;	
+                }	
+                return "No credentials";      
+            }      
+            if(credentials.rejected)	
+                return "Rejected by user";      
+            var v = showtime.httpPost("http://navix.turner3d.net/login/", {	
+                username: credentials.username,	password: credentials.password      
+            });            
+            var doc = v.toString();            
+            if(doc == '') {	
+                reason = 'Login failed, try again';	
+                continue;      
+            }      
+            showtime.trace('Logged in to Headweb as user: ' + credentials.username);
+            this.user_id = v.toString();
+            return false;    
+        }
+    }    
+    
+    /*--------------------------------------------------------------------
+    # Description: -
+    # Parameters : -
+    # Return     : -
+    /*------------------------------------------------------------------*/             
+    function CServer_is_user_logged_in() {
+        if (this.user_id != '')
+            return true;  
+        return false;
     }
     
 plugin.addURI(PREFIX + ":start", startPage);
