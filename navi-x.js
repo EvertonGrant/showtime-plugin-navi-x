@@ -99,10 +99,6 @@ function startPage(page) {
         if (result != 0) //failed, try the mirror home page
             result = ParsePlaylist(page, home_URL_mirror, new CMediaItem(), 0, true, "CACHING"); //mirror site 
     }
-                        
-    page.appendItem(PREFIX + ':playlist:' + 'playlist:' + escape('http://navi-x.googlecode.com/svn/trunk/Playlists/flickr/flickr.plx'),"directory", {
-                            title: 'Test2'
-                        });  
     
     page.loading = false;
   }
