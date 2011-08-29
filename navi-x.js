@@ -99,10 +99,10 @@ function startPage(page) {
         if (result != 0) //failed, try the mirror home page
             result = ParsePlaylist(page, home_URL_mirror, new CMediaItem(), 0, true, "CACHING"); //mirror site 
     }
-
-    page.appendItem(PREFIX + ':playlist:' + 'playlist:' + escape('http://www.navi-x.org/playlists/podcasts/podcasts.plx'),"directory", {
-                            title: 'Test'
-                        });              
+                        
+    page.appendItem(PREFIX + ':playlist:' + 'playlist:' + escape('http://navi-x.googlecode.com/svn/trunk/Playlists/flickr/flickr.plx'),"directory", {
+                            title: 'Test2'
+                        });  
     
     page.loading = false;
   }
@@ -220,19 +220,13 @@ function getFileExtension(filename){
             
             if (reload == true)
             {
-                //load the playlist
-                /*if (type == 'rss_flickr_daily')
-                    result = playlist.load_rss_flickr_daily(URL, mediaitem)                
+                //load the playlist              
                 /*if (type.slice(0,3) == 'rss')
                     result = playlist.load_rss_20(URL, mediaitem, proxy);
                 /*else if type[0:4] == 'atom':
                     result = playlist.load_atom_10(URL, mediaitem, proxy)
                 else if type == 'opml':
                     result = playlist.load_opml_10(URL, mediaitem, proxy)
-                else if type == 'xml_shoutcast':
-                    result = playlist.load_xml_shoutcast(URL, mediaitem, proxy)
-                else if type == 'xml_applemovie':
-                    result = playlist.load_xml_applemovie(URL, mediaitem, proxy)
                 else if type == 'directory':
                     result = playlist.load_dir(URL, mediaitem, proxy)*/
                 //else //assume playlist file
@@ -469,7 +463,7 @@ function getFileExtension(filename){
                     
                     var name_final_color = '';
                     var name = m.name;
-                    var tmp_name3;
+                    var tmp_name3 = '';
                     var renew = 0;
                     while(name.indexOf('[COLOR=FF') != -1)
                     {
@@ -490,27 +484,32 @@ function getFileExtension(filename){
                     }
                     if (!renew)
                         name_final_color = m.name;
-                    if (m.type == "video" | "audio" | "playlist")
+                    if (m.type == "video" || m.type == "audio" || m.type == "playlist")
                         name_final_color+=tmp_name3;
                     if (label2 != '')
                         name_final_color+='<font color="#ADFF2F">'+' ('+label2+')'+'</font>';
                     var playlist_link = m.type;
                     playlist_link+=":"+escape(link);
-                    if (m.type == "playlist" || m.type == 'favorite' || m.type.slice(0,3) == 'rss' ||
+                    /*if (m.type == "playlist" || m.type == 'favorite' || m.type.slice(0,3) == 'rss' ||
                         m.type == 'rss_flickr_daily' || m.type == 'directory' ||
                         m.type == 'html_youtube' || m.type == 'xml_shoutcast' ||
                         m.type == 'xml_applemovie' || m.type == 'atom' || m.type == 'opml')
                         page.appendItem(PREFIX + ':playlist:' + playlist_link,"directory", {
                             title: new showtime.RichText(name_final_color), 
                             icon: icon
-                        });
-                    else if (m.type == "image")
+                        });*/
+                    if (m.type == "image")
                         page.appendItem(link,"image", {title: new showtime.RichText(name_final_color), icon: icon});
                     else if (m.type == "audio")
                         page.appendItem(link,"audio", {title: new showtime.RichText(name_final_color), icon: icon});
                     else if (m.type == "video")
                         page.appendItem(PREFIX + ':video:' + escape(m.name) + ":" + escape(link) + ":" + escape(m.processor),"directory", {
                             title: new showtime.RichText(name_final_color), icon: icon});
+                    else if (m.type != 'script' && m.type!='window' && m.type != 'text')
+                        page.appendItem(PREFIX + ':playlist:' + playlist_link,"directory", {
+                            title: new showtime.RichText(name_final_color), 
+                            icon: icon
+                        });
                     
                     n=n+1;
                     if (n >= this.page_size)
@@ -606,8 +605,6 @@ function CPlayList()
     this.size = CPlaylist_size;
     this.load_plx = CPlaylist_load_plx;
     //this.load_rss_20 = CPlaylist_load_rss_20;
-    this.load_youtube_postprocessor = CPlaylist_load_youtube_postprocessor;
-    //this.load_rss_flickr_daily = CPlaylist_load_rss_flickr_daily;
 }
     
     /*--------------------------------------------------------------------
@@ -892,70 +889,6 @@ function CPlayList()
         
         return 0 //successful
     }
-    
-    /*--------------------------------------------------------------------
-    # Description: Youtube post processor.
-    # Parameters : filename=URL or local file
-    #              mediaitem=CMediaItem object to load    
-    # Return     : 0=success, 
-    #              -1=invalid playlist version, 
-    #              -2=could not open playlist
-    /*------------------------------------------------------------------*/
-    function CPlaylist_load_youtube_postprocessor(filename, mediaitem, proxy)
-    {
-        //is this the Youtube API?
-        if (mediaitem.URL.indexOf("http://gdata.youtube.com") != -1)
-        {
-            var maxresults = 0;
-            index = mediaitem.URL.indexOf("max-results");
-            if (index != -1)
-            {
-                index2 =  mediaitem.URL.indexOf("&", index);
-                if (index2 != -1)
-                    maxresults = parseInt(mediaitem.URL.slice(index+12,index2));
-                else
-                    maxresults = parseInt(mediaitem.URL.slice(index+12, mediaitem.URL.length));
-            }
-            if (this.list.length < maxresults)
-            {
-                // no next page
-                return; 
-            }
-            var startindex = 1
-            URL = mediaitem.URL
-            var index = mediaitem.URL.find("start-index")
-            if (index != -1)
-            {
-                var index2 =  mediaitem.URL.indexOf("&", index+1);
-                if (index2 != -1){
-                    startindex = parseInt(mediaitem.URL.slice(index+12,index2));
-                    URL = mediaitem.URL(0,index-1) + mediaitem.URL(index2,mediaitem.URL.length);
-                }
-                else{
-                    startindex = parseInt(mediaitem.URL.slice(index+12,mediaitem.URL.length));
-                    URL = mediaitem.URL(0,index-1);
-                }
-            }   
-            if (this.list[this.list.length-1].name == 'Next Page')
-                startindex = startindex + this.list.length -1;
-            else
-                startindex = startindex + this.list.length;
-                       
-            var tmp = CMediaItem() //create new item
-            tmp.type = mediaitem.type;
-            tmp.name = 'Next Page';
-            //tmp.icon = imageDir + 'icon_right.png';
-            tmp.player = mediaitem.player;
-            tmp.background = mediaitem.background;
-            tmp.processor = mediaitem.processor;
-            
-            tmp.URL = URL + "&start-index=%d" % startindex;
-            
-            this.list.push(tmp) ;
-        }
-        return;
-    }
-
     
 //-------------------------------- CMediaItem ----------------------------------------------------------------
     
