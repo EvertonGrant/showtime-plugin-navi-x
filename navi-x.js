@@ -95,17 +95,13 @@ function startPage(page) {
     
     result = -1;
     
-    if (result != 0)
+    if (result)
     {
         //Load the Navi-X home page
         result = ParsePlaylist(page, this.home, new CMediaItem(), 0, true, "CACHING");
-        if (result != 0) //failed, try the mirror home page
+        if (result) //failed, try the mirror home page
             result = ParsePlaylist(page, home_URL_mirror, new CMediaItem(), 0, true, "CACHING"); //mirror site 
     }
-    
-    page.appendItem(PREFIX + ':playlist:' + 'rss:' + escape('http://revision3.com/diggnation/feed/quicktime-large'),"directory", {
-                            title: 'Test'
-                        });
     
     page.loading = false;
   }
@@ -229,9 +225,9 @@ function getFileExtension(filename){
                 //load the playlist              
                 if (type.slice(0,3) == 'rss')
                     result = playlist.load_rss_20(URL, mediaitem, proxy);
-                /*else if type[0:4] == 'atom':
+                else if (type.slice(0,4) == 'atom')
                     result = playlist.load_atom_10(URL, mediaitem, proxy)
-                else if type == 'opml':
+                /*else if type == 'opml':
                     result = playlist.load_opml_10(URL, mediaitem, proxy)
                 else if type == 'directory':
                     result = playlist.load_dir(URL, mediaitem, proxy)*/
@@ -611,6 +607,7 @@ function CPlayList()
     this.size = CPlaylist_size;
     this.load_plx = CPlaylist_load_plx;
     this.load_rss_20 = CPlaylist_load_rss_20;
+    this.load_atom_10 = CPlaylist_load_atom_10;
 }
     
     /*--------------------------------------------------------------------
@@ -1116,7 +1113,7 @@ function CPlayList()
                         if (index2 != -1) {
                             index3 = m.indexOf('"', index2+6)
                             if (index3 != -1) {
-                                type = m.slice(index2+6,index3)
+                                var type = m.slice(index2+6,index3)
                                 if (type.slice(0,11) == 'application')
                                     tmp.type = 'download'
                                 else if (type.slice(0,5) == 'video')
@@ -1127,9 +1124,9 @@ function CPlayList()
                         
                     if ((tmp.type == 'unknown') && (tmp.URL != '')) { //valid URL found
                         //validate the type based on file extension
-                        ext_pos = tmp.URL.lastIndexOf('.') //find last '.' in the string
+                        var ext_pos = tmp.URL.lastIndexOf('.') //find last '.' in the string
                         if (ext_pos != -1) {
-                            ext = tmp.URL.slice(ext_pos+1)
+                            var ext = tmp.URL.slice(ext_pos+1)
                             ext = ext.toLowerCase()
                             if (ext == 'jpg' || ext == 'gif' || ext == 'png')
                                 tmp.type = 'image'
@@ -1170,6 +1167,271 @@ function CPlayList()
         /*#Post rocessing in case of Youtube playlist URL.   
         this.load_youtube_postprocessor(filename, mediaitem, proxy) */
         
+        return 0
+    }
+    
+    /*--------------------------------------------------------------------
+    # Description: Loads a atom webfeed.
+    # Parameters : filename=URL or local file
+    #              mediaitem=CMediaItem object to load    
+    # Return     : 0=success, 
+    #              -1=invalid playlist version, 
+    #              -2=could not open playlist
+    /*------------------------------------------------------------------*/
+    function CPlaylist_load_atom_10(filename, mediaitem, proxy) {
+        if (filename != '')
+            this.URL = filename
+        else
+            this.URL = mediaitem.URL
+
+        try {
+            var data = getRemote(this.URL).content.split('<entry')
+        }
+        catch(err) {
+            showtime.print(err)
+            return -2;
+        }
+        
+        //defaults
+        this.version = plxVersion
+        //use the current background image if mediaitem background is not set.
+        if (mediaitem.background != 'default')
+            this.background = mediaitem.background
+        this.logo = 'none'
+        this.title = ''
+        this.description = ''
+        this.player = mediaitem.player
+        this.processor = mediaitem.processor
+        this.playmode = 'default'
+        this.start_index = 0
+        //clear the list
+        this.list.splice(this.list.lenght)
+        
+        //set the default type
+        var index=mediaitem.type.indexOf(":")
+        var type_default
+        if (index != -1)
+            type_default = mediaitem.type.slice(index+1)
+        else
+            type_default = ''
+        
+        var counter=0
+        //parse playlist entries 
+        for each (var m in data) {
+            if (counter == 0) {
+                //fill the title
+                index = m.indexOf('<title>')
+                if (index != -1) {
+                    var index2 = m.indexOf('</title>')
+                    if (index != -1) {
+                        var value = m.slice(index+7,index2)
+                        this.title = value
+                    }
+                }
+
+                index = m.indexOf('<subtitle')
+                if (index != -1) {
+                    index2 = m.indexOf('</subtitle>')
+                    if (index2 != -1) {
+                        value = m.slice(index+13,index2)
+                        this.description = value
+                        var index3 = this.description.indexOf('<![CDATA[')
+                        if (index3 != -1)
+                            this.description = this.description.slice(9,-3)
+                    }
+                }
+                
+                //fill the logo
+                index = m.indexOf('<logo>')
+                if (index != -1) {
+                    index2 = m.indexOf('</logo>')
+                    if (index2 != -1) {
+                        index3 = m.indexOf('http', index, index2)
+                        if (index3 != -1) {
+                            var index4 = m.indexOf('</', index3, index2+2)
+                            if (index4 != -1) {
+                                value = m.slice(index3,index4)
+                                this.logo = value
+                            }
+                        }
+                    }
+                }
+
+                //fill the logo
+                index = m.indexOf('<icon>')
+                if (index != -1) {
+                    index2 = m.indexOf('</icon>')
+                    if (index2 != -1) {
+                        index3 = m.indexOf('http', index, index2)
+                        if (index3 != -1) {
+                            index4 = m.indexOf('</', index3, index2+2)
+                            if (index4 != -1) {
+                                value = m.slice(index3,index4)
+                                this.logo = value
+                            }
+                        }
+                    }
+                }
+ 
+                counter = counter + 1
+            }
+            else {
+                var tmp = new CMediaItem() //create new item
+                tmp.player = this.player
+                tmp.processor = this.processor
+
+                //get the publication date.
+                index = m.indexOf('<published')
+                if (index != -1) {
+                    index2 = m.indexOf('>', index)
+                    if (index2 != -1) {
+                        index3 = m.indexOf('</published')
+                        if (index3 != -1) {
+                            index4 = m.indexOf(':', index2, index3)
+                            if (index4 != -1) {
+                                value = m.slice(index2+1,index4-3)
+                                value = value.replace('\n',"") 
+                                tmp.name = value
+                            }
+                        }
+                    }
+                }
+                                
+                //get the publication date.
+                index = m.indexOf('<updated')
+                if (index != -1) {
+                    index2 = m.indexOf('>', index)
+                    if (index2 != -1) {
+                        index3 = m.indexOf('</updated')
+                        if (index3 != -1) {
+                            index4 = m.indexOf(':', index2, index3)
+                            if (index4 != -1) {
+                                value = m.slice(index2+1,index4-3)
+                                value = value.replace('\n',"") 
+                                tmp.name = value 
+                            }
+                        }
+                    }
+                }
+                                
+                //get the title.
+                index = m.indexOf('<title')
+                if (index != -1) {
+                    index2 = m.indexOf('>', index)
+                    if (index2 != -1) {
+                        index3 = m.indexOf('</title>')
+                        if (index3 != -1) {
+                            index4 = m.indexOf('![CDATA[', index2, index3)
+                            if (index4 != -1)
+                                value = m.slice(index2+10,index3-3)
+                            else
+                                value = m.slice(index2+1,index3)
+                            value = value.replace('\n'," '")                              
+                            tmp.name = tmp.name + ' ' + value
+                        }
+                    }
+                }
+                                             
+                //get the description.
+                index = m.indexOf('<summary')
+                if (index != -1) {
+                    index2 = m.indexOf('>', index)
+                    if (index2 != -1) {
+                        index3 = m.indexOf('</summary')
+                        if (index3 != -1) {
+                            value = m.slice(index2+1,index3)
+                            value = value.replace('\n',"") 
+                            tmp.description = value
+                        }
+                    }
+                }
+
+                if (tmp.description == '' && tmp.name != '')
+                    tmp.description = tmp.name
+
+                //get the thumb
+                index = m.indexOf('<link type="image')
+                if (index != -1) {
+                    index2 = m.indexOf('href=', index+16)
+                    if (index2 != -1) {
+                        index3 = m.indexOf('"', index2+6)
+                        if (index3 != -1) {
+                            value = m.slice(index2+6,index3)
+                            tmp.thumb = value
+                        }
+                    }
+                }
+
+                if (tmp.thumb == 'default') {
+                    //no thumb image found, therefore grab any jpg image in the item
+                    index = m.indexOf('.jpg')
+                    if (index != -1) {
+                        index2 = m.rfind('http', 0, index)
+                        if (index2 != -1) {
+                            value = m.slice(index2,index+4)
+                            tmp.thumb = value
+                        }
+                    }
+                }
+
+                //get the enclosed content.
+                index = m.indexOf('<link rel="enclosure')   
+                if (index == -1)
+                    index = m.indexOf('<link')   
+                if (index != -1) {
+                    index2 = m.indexOf('href=',index) //get the URL attribute
+                    if (index2 != -1) {
+                        index3 = m.indexOf(m[index2+5], index2+6)
+                        if (index3 != -1) {
+                            value = m.slice(index2+6,index3)
+                            tmp.URL = value
+                        }
+                    }
+                                          
+                    //get the media type
+                    if (type_default != '')
+                        tmp.type = type_default
+
+                    if (tmp.type == 'unknown') {  
+                        index2 = m.indexOf('type="',index) //get the type attribute
+                        if (index2 != -1) {
+                            index3 = m.indexOf('"', index2+6)
+                            if (index3 != -1) {
+                                var type = m.slice(index2+6,index3)
+                                if (type.slice(0,11) == 'application')
+                                    tmp.type = 'download'
+                                else if (type.slice(0,5) == 'video')
+                                    tmp.type = 'video'
+                            }
+                        }
+                    }
+                        
+                    if ((tmp.type == 'unknown') && (tmp.URL != '')) {//valid URL found
+                        //validate the type based on file extension
+                        var ext_pos = tmp.URL.lastIndexOf('.') //find last '.' in the string
+                        if (ext_pos != -1) {
+                            var ext = tmp.URL.slice(ext_pos+1)
+                            ext = ext.toLowerCase()
+                            if (ext == 'jpg' || ext == 'gif' || ext == 'png')
+                                tmp.type = 'image'
+                            else if (ext == 'mp3')
+                                tmp.type = 'audio'
+                            else
+                                tmp.type = 'html'
+                        }
+                    }
+                }
+                                                       
+                if (tmp.URL != '') {
+                    this.list.push(tmp)
+                    counter++
+                }
+            }
+        }
+
+        /*#Post rocessing in case of Youtube playlist URL.   
+        this.load_youtube_postprocessor(filename, mediaitem, proxy) */
+                    
         return 0
     }
     
