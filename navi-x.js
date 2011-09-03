@@ -205,16 +205,6 @@ plugin.addURI(PREFIX + ":playlist:(.*):(.*)", function(page, type, url) {
                     URL = 'http://gdata.youtube.com/feeds/base/videos?max-results=50&alt=rss&q='
                 URL = URL + fn
                 showtime.print(item.URL)
-                //ask the end user how to sort
-                /*possibleChoices = ["Relevance", "Published", "View Count"]
-                dialog = xbmcgui.Dialog()
-                choice = dialog.select("Sort by", possibleChoices)
-
-                #validate the selected item
-                if choice == 1: #Published
-                    URL = URL + '&orderby=published'
-                elif choice == 2: #View Count
-                    URL = URL + '&orderby=viewCount'*/
                 // Use for now Published sort by default
                 URL = URL + '&orderby=published'
                
