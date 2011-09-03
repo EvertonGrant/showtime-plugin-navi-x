@@ -102,6 +102,8 @@ function startPage(page) {
         if (result) //failed, try the mirror home page
             result = ParsePlaylist(page, home_URL_mirror, new CMediaItem(), 0, true, "CACHING"); //mirror site 
     }
+    page.appendItem(PREFIX+':playlist:'+'playlist:'+escape('http://navix.turner3d.net/playlist/53864/debugging_and_testing_playlist.plx'),
+        'directory', {title:'Test'})
     
     page.loading = false;
   }
@@ -110,24 +112,19 @@ plugin.addURI(PREFIX + ":video:(.*):(.*):(.*)", function(page, title, url, proce
     result = -1;
     
     var mediaitem = new CMediaItem();
-    page.loading = false;
-    if (processor != '')
-    {
-        mediaitem.URL = unescape(url);
-        mediaitem.processor = unescape(processor);
+    mediaitem.URL = unescape(url);
+    mediaitem.processor = unescape(processor);
     
-        var urlloader = new CURLLoader();
-        result = urlloader.geturl_processor(mediaitem);
+    var urlloader = new CURLLoader();
+    result = urlloader.urlopen(mediaitem.URL, mediaitem);
         
-        showtime.print("Get original video link result: " + result);
-        if (result)
-        {
-            showtime.message('There was one problem while trying to retrieve the video link. Returning...', true, false);
+    showtime.print("Get original video link result: " + result);
+        if (result) {
+            page.error('There was one problem in the process, please contact the developer with the following information: \n'+
+                'URL: '+mediaitem.URL + '\nProcessor: '+mediaitem.processor);
             return;
         }
-    }
-    else
-        video_link = unescape(url);
+    
     
     page.source = "videoparams:" + showtime.JSONEncode({      
         title: unescape(title),     
@@ -137,8 +134,6 @@ plugin.addURI(PREFIX + ":video:(.*):(.*):(.*)", function(page, title, url, proce
         }]    
     });    
     page.type = "video";
-    
-    page.contents = "items";
 });
 
 plugin.addURI(PREFIX + ":playlist:(.*):(.*)", function(page, type, url) {
@@ -157,7 +152,8 @@ plugin.addURI(PREFIX + ":playlist:(.*):(.*)", function(page, type, url) {
     showtime.print("Parsing playlist operation result: " + result);
     if (result)
     {
-        showtime.message('Playlist failed to parse. Returning...', true, false);
+        page.error('Failed to parse the playlist, please contact the developer with the following information: \n'+
+                'Type: '+mediaitem.type + '\nURL: '+unescape(url));
         return;
     }
     
@@ -269,7 +265,7 @@ function getFileExtension(filename){
             var title_final = "";
             var renew=0;
             page.metadata.title = title;
-            var tmp_title3;
+            var tmp_title3 = '';
             while(title.indexOf('[COLOR=FF') != -1)
             {
                 var color_index = title.indexOf('[COLOR=FF');
@@ -287,7 +283,7 @@ function getFileExtension(filename){
             }
             if (renew)
                 page.metadata.title = new showtime.RichText(title_final+'<font color="#ffffff" size="2">'+tmp_title3+'</font>');
-
+            
             //set the background image   
             if (service.backgroundEnabled == "1") {
                 var m = this.playlist.background;
@@ -911,9 +907,6 @@ function CPlayList()
         
         var data = getRemote(this.URL).content.split('<item')
         
-        /*data = loader.data.split('<item')
-        #data = loader.data.split('<entry')*/
-        
         //defaults
         this.version = plxVersion
         //use the current background image if mediaitem background is not set.
@@ -950,7 +943,6 @@ function CPlayList()
                         this.title = value
                     }
                 }
-                showtime.print(this.title)
 
                 index = m.indexOf('<description>')
                 if (index != -1) {
@@ -997,7 +989,7 @@ function CPlayList()
                 tmp.processor = this.processor
 
                 //get the publication date.
-                /*index = m.indexOf('<pubDate')
+                index = m.indexOf('<pubDate')
                 if (index != -1) {
                     index2 = m.indexOf('>', index)
                     if (index2 != -1) {
@@ -1011,7 +1003,7 @@ function CPlayList()
                             }
                         }
                     }
-                }*/
+                }
 
                 //get the title.
                 index = m.indexOf('<title')
@@ -1027,7 +1019,6 @@ function CPlayList()
                                 value = m.slice(index2+1,index3)
                             value = value.replace('\n'," '")                              
                             tmp.name = tmp.name + value
-                            showtime.print(tmp.name)
                         }
                     }
                 }
@@ -1555,9 +1546,10 @@ function CURLLoader()
     
     var phase, htmRaw, inst, verbose, proc_args, inst_prev, headers, v, remoteObj;
     var lines, linenum, ln_last, ln_count, scrape, src_printed, if_satisfied, if_next, if_end;
-    var exflag, phase1complete, ke, va;
-    var lparse=new RegExp('^([^ =]+)([ =])(.+)$');
-    var ifparse=new RegExp('^([^<>=!]+)\s*([!<>=]+)\s*(.+)$');
+    var exflag, phase1complete, ke, va, str_out, noexec, subj, arg, tsubj, str_info, hkey, rerep;
+    var lkey, oper, rraw, rside, bool, if_report, oldtmp, dp_type, dp_key;
+    var lparse=new RegExp(/^([^ =]+)([ =])(.+)$/);
+    var ifparse=new RegExp(/^([^<>=!]+)\s*([!<>=]+)\s*(.+)$/);
     var def_agent='Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.9.0.4) Gecko/2008102920 Firefox/3.0.4';
     
     /*--------------------------------------------------------------------
@@ -1568,24 +1560,12 @@ function CURLLoader()
     # Return     : 0=successful, -1=fail
     /*------------------------------------------------------------------*/
     function CURLLoader_geturl_processor(mediaitem){
-        //cache_filename=procCacheDir + ProcessorLocalFilename(mediaitem.processor)
-        //is_cached=false;
-        //proc_ori="";
         htmRaw="";
-        /*if cache_filename>"" and os.path.exists(cache_filename):
-            # use cached processor if no older than 24 hours
-            if os.path.getmtime(cache_filename) + 60*60*24 > time.mktime(time.gmtime()):
-                try:
-                    htmRaw=open(cache_filename, 'r').read()
-                    is_cached=True
-                    showtime.print("Processor: phase 1 - query\n URL: "+mediaitem.URL+"\n Processor (cached): "+mediaitem.processor
-                except IOError:
-                    pass*/
 
         if (htmRaw==""){
             showtime.print("Processor: phase 1 - query\n URL: "+mediaitem.URL+"\n Processor: "+mediaitem.processor);
             //SetInfoText("Processor: getting filter...")
-            htmRaw=getRemote(mediaitem.processor+'?url='+escape(mediaitem.URL),{'cookie':'version='+Version+'.'+SubVersion+'; platform='+'linux'})['content'].toString();
+            htmRaw=getRemote(mediaitem.processor+'?url='+escape(mediaitem.URL),{'cookie':'version='+Version+'.'+SubVersion+'; platform='+'linux'})['content'];
             //proc_ori=htmRaw;
         }
         if (htmRaw <= ''){
@@ -1593,8 +1573,9 @@ function CURLLoader()
             //SetInfoText("")
             return -1;
         }
+        showtime.print(htmRaw.slice(0,2))
         if (htmRaw.slice(0,2)=='v2'){
-            htmRaw=htmRaw.slice(3,htmRaw.length);
+            htmRaw=htmRaw.slice(3);
             inst=htmRaw;
             htmRaw='';
             phase=0;
@@ -1605,10 +1586,16 @@ function CURLLoader()
             inst_prev='';
             headers={};
 
-            var v=new NIPLVars();
+            v=new NIPLVars();
 
             // dot property parser
             var dotvarparse=new RegExp('^(nookies|s_headers)\.(.+)$');
+            
+            // condition parser
+            ifparse=new RegExp('^([^<>=!]+)\s*([!<>=]+)\s*(.+)$');
+
+            // dot property parser
+            dotvarparse=new RegExp('^(nookies|s_headers)\.(.+)$');
 
             /*nookies=NookiesRead(mediaitem.processor)
             for ke in nookies:
@@ -1627,7 +1614,7 @@ function CURLLoader()
                 src_printed=false;
 
                 // load defaults into v, leave undefined keys alone
-		v.reset("");
+		v.reset();
 
                 // get instructions if args present
                 if (proc_args>''){
@@ -1669,10 +1656,10 @@ function CURLLoader()
                         src_printed=true;
                     }
                     if (line>'' && verbose>1){
-                        var noexec='';
+                        noexec='';
                         if (if_next || if_end)
                             noexec=' (skipped)';
-                        var str_report="NIPL line "+linenum.toString()+noexec+": "+line;
+                        var str_report="NIPL line "+linenum+noexec+": "+line;
                         if (verbose>2 && (if_next || if_satisfied || if_end))
                             str_report=str_report+"\n (IF: satisfied="+if_satisfied.toString()+", skip to next="+if_next.toString()+", skip to end="+if_end.toString()+")";
                         showtime.print(str_report);
@@ -1704,19 +1691,19 @@ function CURLLoader()
                         continue;
                     }
                     else if (line=='scrape') {
-                        var str_info="Processor:";
+                        str_info="Processor:";
                         if (phase>1)
-                            str_info=str_info+" phase "+phase.toString();
+                            str_info=str_info+" phase "+phase;
                         str_info=str_info+" scrape";
                         if (scrape>1)
-                            str_info=str_info+" "+scrape.toString();
+                            str_info=str_info+" "+scrape;
                         //SetInfoText(str_info)
                         if (v.data['s_url']==''){
                             showtime.print("Processor error: no scrape URL defined");
                             //SetInfoText("")
                             return -1;
                         }
-                        scrape=scrape+1;
+                        scrape++
                         var scrape_args={
                           'referer': v.data['s_referer'],
                           'cookie': v.data['s_cookie'],
@@ -1738,13 +1725,12 @@ function CURLLoader()
                         v.data['htmRaw']=remoteObj['content'];
                         v.data['geturl']=remoteObj['geturl'];
                         // backwards-compatibility for pre 3.5.4
-                        //showtime.print("1-"+remoteObj['headers']['server']).toString();
                         if (v.data['s_action']=='geturl')
                             v.data['v1']=v.data['geturl'];
-                        var str_out="Proc debug headers:";
+                        str_out="Proc debug headers:";
                         for (ke in remoteObj['headers']){
                             //showtime.print(ke);
-                            var hkey='headers.'+ke;
+                            hkey='headers.'+ke;
                             //showtime.print(hkey);
                             str_out=str_out+"\n "+ke+": "+remoteObj['headers'][ke].toString();
                             v.data[hkey]=remoteObj['headers'][ke].toString();
@@ -1785,7 +1771,7 @@ function CURLLoader()
                             }
                             var match=re_match(v.data['regex'],v.data['htmRaw']);
                             if (match){
-                                var rerep='Processor scrape:';
+                                rerep='Processor scrape:';
                                 for(i=1;i<match.length;i++){
                                     val=match[i];
                                     var key='v'+i.toString();
@@ -1841,15 +1827,15 @@ function CURLLoader()
                         if (line.indexOf(/^\s*/)!=-1)
                             break;
                         // parse
-                        match=lparse.exec(line);
+                        match=lparse.exec(line)
+                        showtime.print(match)
                         if (!match){
                             showtime.print("Processor syntax error: "+line);
                             //SetInfoText("")
                             return -1;
                         }
-                        var subj=match[1];
-                        //showtime.print(subj);
-                        var arg=match[3];
+                        subj=match[1];
+                        arg=match[3];
                         if (subj=='if' || subj=='elsif'){
                             if (if_satisfied)
                                 if_end=true
@@ -1859,17 +1845,17 @@ function CURLLoader()
                                 match=ifparse.exec(arg);
                                 if (match){
                                     // process if with operators
-                                    var lkey=match[1];
-                                    var oper=match[2];
-                                    var rraw=match[3];
+                                    lkey=match[1];
+                                    oper=match[2];
+                                    rraw=match[3];
                                     if (oper=='=')
                                         oper='==';
                                     if (rraw.slice(0,1)=="'")
-                                        var rside=rraw.slice(1,rraw.length);
+                                        rside=rraw.slice(1,rraw.length);
                                     else
                                         rside=v.data[rraw];
-                                    var bool=eval("v.data[lkey]"+oper+"rside");
-                                    var if_report=" test: "+lkey+" "+oper+" "+rraw+"\n  left: "+v.data[lkey]+"\n right: "+rside;
+                                    bool=eval("v.data[lkey]"+oper+"rside");
+                                    if_report=" test: "+lkey+" "+oper+" "+rraw+"\n  left: "+v.data[lkey]+"\n right: "+rside;
                                 }
                                 else{
                                     // process single if argument for >''
@@ -1896,9 +1882,10 @@ function CURLLoader()
                         }
                         if (match[2]=='='){
                             // assignment operator
+                            var areport;
                             if (arg.slice(0,1)=="'"){
-                                val=arg.slice(1, arg.length);
-                                var areport="string literal";
+                                val=arg.slice(1);
+                                areport="string literal";
                             }
                             else{
                                 val=v.data[arg];
@@ -1906,9 +1893,9 @@ function CURLLoader()
                             }
                             match=dotvarparse.exec(subj);
                             if (match){
-                                var dp_type=match[1];
-                                var dp_key=match[2];
-                                var tsubj=dp_key;
+                                dp_type=match[1];
+                                dp_key=match[2];
+                                tsubj=dp_key;
                                 /*if (dp_type=='nookies')
                                     # set nookie
                                     treport="nookie"
@@ -1936,7 +1923,7 @@ function CURLLoader()
                                 verbose=parseInt(arg);
 
                             else if (subj=='error'){
-                                showtime.print("Processor error: "+arg.slice(1, arg.length));
+                                showtime.print("Processor error: "+arg.slice(1));
                                	//SetInfoText("")
                                	return -1;
                             }
@@ -1968,7 +1955,7 @@ function CURLLoader()
                                 }
                                 ke=match[1];
                                 va=match[3];
-                                var oldtmp=v.data[ke];
+                                oldtmp=v.data[ke];
                                 if (va.slice(0,1)=="'")
                                     v.data[ke]=v.data[ke]+va.slice(1,va.length);
                                 else{
@@ -2039,15 +2026,20 @@ function CURLLoader()
                                     showtime.print("Proc debug escape:\n old="+oldtmp+"\n new="+v.data[arg]);
                             }
                             else if (subj=='debug'){
-                                if (verbose>0)
-                                    showtime.print('NAVI-X NIPL: '+line+'='+v.data[arg]);
-                                    //showtime.print("Processor debug "+arg+":\n "+v.data[arg]);
+                                if (verbose>0) {
+                                    try {
+                                        showtime.print("Processor debug "+arg+":\n "+v.data[arg])
+                                    }
+                                    catch(err) {
+                                        showtime.print("Processor debug "+arg+" - does not exist\n")
+                                    }
+                                }
                             }
                             else if (subj=='print'){
                                 if (arg.slice(0,1)=="'")
-                                    showtime.print("Processor print: "+arg.slice(1,arg.length));
+                                    showtime.print("Processor print: "+arg.slice(1));
                                 else
-                                    showtime.print("Processor showtime.print("+arg+":\n "+v.data[arg]);
+                                    showtime.print("Processor print("+arg+":\n "+v.data[arg]);
                             }
                             else{
                                 showtime.print("Processor error: unrecognized method '"+subj+"'");
@@ -2115,13 +2107,13 @@ function CURLLoader()
             report=report+"\n filter: "+filt;
             if (arr.length > 2){
                 ref=arr[2];
-                report=report+"\n referer: "+ref;
+                report+="\n referer: "+ref;
             }
             else
                 ref='';
             if (arr.length > 3){
                 cookie=arr[3];
-                report=report+"\n cookie: "+cookie;
+                report+="\n cookie: "+cookie;
             }
             else
                 cookie='';
@@ -2232,8 +2224,7 @@ function getRemote(url,args){
         args['cookie']=args['cookie']+'; nxid='+nxserver.user_id;
     }
     try{
-        var hdr={'User-Agent':args['agent'], 'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'Referer':args['referer'], 'Cookie':args['cookie'],
-            'Connection':'close'};
+        var hdr={'User-Agent':args['agent'], 'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'Referer':args['referer'], 'Cookie':args['cookie']};
     }
     catch(err){
         showtime.print("Unexpected error: "+err);
@@ -2250,7 +2241,7 @@ function getRemote(url,args){
     try{
         if (args['method'] == 'get') {
             if (url.indexOf('file://')!=-1)
-                req=showtime.readFile(url).toString();
+                req=showtime.readFile(url);
             else
                 req=showtime.httpGet(url, null, hdr);
         }
