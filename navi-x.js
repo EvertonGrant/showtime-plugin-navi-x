@@ -150,8 +150,13 @@ plugin.addURI(PREFIX + ":playlist:(.*):(.*)", function(page, type, url) {
     mediaitem.type = type;
     mediaitem.URL = unescape(url)
     
-    if (type.slice(0,6) == 'search')
+    page.loading = false;
+    
+    if (type.slice(0,6) == 'search') {
         result = PlaylistSearch(page,mediaitem)
+        if (result)
+            return;
+    }
     else
         result = ParsePlaylist(page, unescape(url), mediaitem, 0, true, "CACHING");
     showtime.print("Parsing playlist operation result: " + result);
@@ -161,7 +166,6 @@ plugin.addURI(PREFIX + ":playlist:(.*):(.*)", function(page, type, url) {
                 'Type: '+mediaitem.type + '\nURL: '+unescape(url));
         return;
     }
-    page.loading = false;
 });
 
 
