@@ -102,6 +102,7 @@ function startPage(page) {
         if (result) //failed, try the mirror home page
             result = ParsePlaylist(page, home_URL_mirror, new CMediaItem(), 0, true, "CACHING"); //mirror site 
     }
+    
     page.appendItem(PREFIX+':playlist:'+'playlist:'+escape('http://navix.turner3d.net/playlist/53864/debugging_and_testing_playlist.plx'),
         'directory', {title:'Test'})
     
@@ -147,8 +148,12 @@ plugin.addURI(PREFIX + ":playlist:(.*):(.*)", function(page, type, url) {
     
     var mediaitem = new CMediaItem();
     mediaitem.type = type;
+    mediaitem.URL = unescape(url)
     
-    result = ParsePlaylist(page, unescape(url), mediaitem, 0, true, "CACHING");
+    if (type.slice(0,6) == 'search')
+        result = PlaylistSearch(page,mediaitem)
+    else
+        result = ParsePlaylist(page, unescape(url), mediaitem, 0, true, "CACHING");
     showtime.print("Parsing playlist operation result: " + result);
     if (result)
     {
@@ -156,9 +161,92 @@ plugin.addURI(PREFIX + ":playlist:(.*):(.*)", function(page, type, url) {
                 'Type: '+mediaitem.type + '\nURL: '+unescape(url));
         return;
     }
-    
     page.loading = false;
 });
+
+
+        /*--------------------------------------------------------------------
+        # Description: Handle selection of playlist search item (e.g. Youtube)
+        # Parameters : item=mediaitem
+        #              append(optional)=true is playlist must be added to 
+        #              history list;
+        # Return     : -
+        /*------------------------------------------------------------------*/
+        function PlaylistSearch(page, item) {
+            var search = showtime.textDialog('Search: '+item.name, true, false)
+            
+            if (search.rejected)
+                return -1 //canceled
+            var searchstring = search.input;
+            if (searchstring.length == 0)
+                return -1 //empty string search, cancel
+            //
+            //get the search type:
+            var index=item.type.indexOf(":")
+            var search_type;
+            if (index != -1)
+                search_type = item.type.slice(index+1)
+            else
+                search_type = ''
+        
+            var fn
+            var mediaitem
+        
+            //youtube search
+            if ((item.type == 'search_youtube') || (search_type == 'html_youtube')) {
+                fn = searchstring.replace(/ /g,'+')
+                if (item.URL != '')
+                    URL = item.URL
+                else
+                    URL = 'http://gdata.youtube.com/feeds/base/videos?max-results=50&alt=rss&q='
+                URL = URL + fn
+                showtime.print(item.URL)
+                //ask the end user how to sort
+                /*possibleChoices = ["Relevance", "Published", "View Count"]
+                dialog = xbmcgui.Dialog()
+                choice = dialog.select("Sort by", possibleChoices)
+
+                #validate the selected item
+                if choice == 1: #Published
+                    URL = URL + '&orderby=published'
+                elif choice == 2: #View Count
+                    URL = URL + '&orderby=viewCount'*/
+                // Use for now Published sort by default
+                URL = URL + '&orderby=published'
+               
+                mediaitem=new CMediaItem()
+                mediaitem.URL = URL
+                mediaitem.type = 'rss:video'
+                mediaitem.name = 'search results: ' + searchstring
+                mediaitem.player = item.player
+                mediaitem.processor = item.processor
+
+                this.pl_focus = this.playlist
+                result = ParsePlaylist(page, mediaitem.URL, mediaitem, 0, true, 'CACHING')
+            }
+        
+            else { //generic search
+                    fn = searchstring.replace(/ /g,'+')
+                    URL = item.URL
+                    URL = URL + fn
+//@todo:add processor support to change the URL.                       
+                    mediaitem=new CMediaItem()
+                    mediaitem.URL = URL
+                    if (search_type != '')
+                        mediaitem.type = search_type
+                    else //default
+                        mediaitem.type = 'playlist'
+                    
+                    mediaitem.name = 'search results: ' + searchstring
+                    mediaitem.player = item.player
+                    mediaitem.processor = item.processor
+//@todo
+                    this.pl_focus = this.playlist
+                    result = ParsePlaylist(page, mediaitem.URL, mediaitem, 0, true, 'CACHING')
+            }
+            return result;
+        }
+             
 
 
 /*--------------------------------------------------------------------
@@ -166,20 +254,17 @@ plugin.addURI(PREFIX + ":playlist:(.*):(.*)", function(page, type, url) {
 # Parameters : filename=local path + file name
 # Return     : the file extension Excluding the dot
 /*------------------------------------------------------------------*/
-function getFileExtension(filename){
-    var ext_pos = filename.lastIndexOf('.'); //find last '.' in the string
-    if (ext_pos != -1){
-        var ext_pos2 = filename.lastIndexOf('?', ext_pos) //find last '.' in the string
+function getFileExtension(filename) {
+    var ext_pos = filename.lastIndexOf('.') //find last '.' in the string
+    if (ext_pos != -1) {
+        var ext_pos2 = filename.indexOf('?', ext_pos) //find last '.' in the string
         if (ext_pos2 != -1)
-            return filename.slice(ext_pos+1,ext_pos2);
-        else{
-            if (filename.indexOf('/', ext_pos)!=-1)
-                return '';
-            return filename.slice(ext_pos+1,filename.length);
-        }
+            return filename.slice(ext_pos+1,ext_pos2)
+        else
+            return filename.slice(ext_pos+1)
     }
     else
-        return '';
+        return ''
 }
   
 /*----------------------------------------------------------------------------
@@ -209,7 +294,7 @@ function getFileExtension(filename){
             #(4)download completed list
             #Parameter 'this.pl_focus' points to the playlist in focus (1-4).*/
             var playlist = this.pl_focus;
-                        
+            showtime.print(URL)
             /*if (reload == false)
                 mediaitem = this.mediaitem;*/
             
@@ -456,8 +541,8 @@ function getFileExtension(filename){
                         label2 = label2 + ' >';*/
                     
                     var link = m.URL;
-                    if (link.indexOf('http://') == -1)
-                        link = plugin.path + link;
+                    /*if (link.indexOf('http://') == -1)
+                        link = plugin.path + link;*/
                     
                     var name_final_color = '';
                     var name = m.name;
@@ -989,7 +1074,7 @@ function CPlayList()
                 tmp.processor = this.processor
 
                 //get the publication date.
-                index = m.indexOf('<pubDate')
+                /*index = m.indexOf('<pubDate')
                 if (index != -1) {
                     index2 = m.indexOf('>', index)
                     if (index2 != -1) {
@@ -999,11 +1084,11 @@ function CPlayList()
                             if (index4 != -1) {
                                 value = m.slice(index2+1,index4-2)
                                 value = value.replace('\n',"") 
-                                tmp.name = value
+                                tmp.date = value
                             }
                         }
                     }
-                }
+                }*/
 
                 //get the title.
                 index = m.indexOf('<title')
@@ -1527,7 +1612,7 @@ function CURLLoader()
     function CURLLoader_urlopen(URL, mediaitem)
     {
         var result = 0; //successful
-
+        showtime.print(getFileExtension(URL))
         if (mediaitem.processor != '')
             result = this.geturl_processor(mediaitem);
         else if (URL.indexOf('http://www.youtube.com') != -1){
@@ -1573,7 +1658,6 @@ function CURLLoader()
             //SetInfoText("")
             return -1;
         }
-        showtime.print(htmRaw.slice(0,2))
         if (htmRaw.slice(0,2)=='v2'){
             htmRaw=htmRaw.slice(3);
             inst=htmRaw;
