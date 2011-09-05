@@ -535,8 +535,6 @@ function getFileExtension(filename) {
                         label2 = label2 + ' >';*/
                     
                     var link = m.URL;
-                    /*if (link.indexOf('http://') == -1)
-                        link = plugin.path + link;*/
                     
                     var name_final_color = '';
                     var name = m.name;
@@ -2318,10 +2316,7 @@ function getRemote(url,args){
     var req="";
     try{
         if (args['method'] == 'get') {
-            if (url.indexOf('file://')!=-1)
-                req=showtime.readFile(url);
-            else
-                req=showtime.httpGet(url, null, hdr);
+            req=showtime.httpGet(url, null, hdr);
         }
         else {
             req=showtime.httpPost(url, args['postdata'], null, hdr).toString();
