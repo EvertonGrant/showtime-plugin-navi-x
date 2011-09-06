@@ -88,7 +88,6 @@ function startPage(page) {
     this.listview = 'default';
     
     nxserver = new CServer();
-    showtime.print(nxserver.user_id);
     
     page.type = "directory";
     page.contents = "items";
@@ -105,6 +104,9 @@ function startPage(page) {
     
     page.appendItem(PREFIX+':playlist:'+'playlist:'+escape('http://navix.turner3d.net/playlist/53864/debugging_and_testing_playlist.plx'),
         'directory', {title:'Test'})
+        
+    page.appendItem(PREFIX+':playlist:'+'opml:'+escape('http://opml.radiotime.com/Browse.ashx?id=r100385&filter=s:popular'),
+        'directory', {title:'OPML'})
     
     page.loading = false;
   }
@@ -282,10 +284,7 @@ function getFileExtension(filename) {
             //this.state_busy = 1
 
             /*The application contains 4 CPlayList objects:
-            #(1)main list, 
-            #(2)favorites,
-            #(3)download queue
-            #(4)download completed list
+            #(1)main list
             #Parameter 'this.pl_focus' points to the playlist in focus (1-4).*/
             var playlist = this.pl_focus;
             showtime.print(URL)
@@ -302,10 +301,8 @@ function getFileExtension(filename) {
                     result = playlist.load_rss_20(URL, mediaitem, proxy);
                 else if (type.slice(0,4) == 'atom')
                     result = playlist.load_atom_10(URL, mediaitem, proxy)
-                /*else if type == 'opml':
+                else if (type == 'opml')
                     result = playlist.load_opml_10(URL, mediaitem, proxy)
-                else if type == 'directory':
-                    result = playlist.load_dir(URL, mediaitem, proxy)*/
                 else //assume playlist file
                     result = playlist.load_plx(URL, mediaitem);
                 
@@ -465,7 +462,6 @@ function getFileExtension(filename) {
             this.state_busy = 1;
             
             var playlist = this.pl_focus;
-            //var listcontrol = this.list;
             this.current_page = current_page;
 
             /*if (append == false)
@@ -476,13 +472,6 @@ function getFileExtension(filename) {
                 this.list5.reset() 
             }*/
 
-            /*if ((current_page > 0) && (append == false))
-            {
-                page.appendItem(PREFIX + ':plx:',"directory", {title: '<<<'});
-                start_pos = start_pos + 1;
-            }*/
-
-            //today=datetime.datetime.today()
             var today=new Date();
             var n=0;
             for (var i = current_page*page_size; i < playlist.size(); i++)
@@ -591,22 +580,6 @@ function getFileExtension(filename) {
                         break; //m
                 }
             }
-                        
-            /*if (((current_page+1)*this.page_size < playlist.size())) //next page item
-            {
-                page.appendItem(PREFIX + ':plx:',"directory", {title: '>>>'});
-            }*/
-                
-            /*this.loading.setVisible(0)
-            listcontrol.setVisible(1) 
-            this.setFocus(listcontrol)*/
-
-            /*var pos = this.getPlaylistPosition()
-            this.listpos.setLabel(str(pos+1) + '/' + str(this.pl_focus.size()))              
-
-            listcontrol.selectItem(start_pos)      
-
-            this.state_busy = 0  */
         }
         
         /*--------------------------------------------------------------------
@@ -681,6 +654,7 @@ function CPlayList()
     this.load_plx = CPlaylist_load_plx;
     this.load_rss_20 = CPlaylist_load_rss_20;
     this.load_atom_10 = CPlaylist_load_atom_10;
+    this.load_opml_10 = CPlaylist_load_opml_10;
 }
     
     /*--------------------------------------------------------------------
@@ -1503,6 +1477,117 @@ function CPlayList()
         return 0
     }
     
+    /*--------------------------------------------------------------------
+    # Description: Loads a OPML file.
+    # Parameters : filename=URL or local file
+    #              mediaitem=CMediaItem object to load    
+    # Return     : 0=succes, 
+    #              -1=invalid playlist version, 
+    #              -2=could not open playlist
+    /*------------------------------------------------------------------*/
+    function CPlaylist_load_opml_10(filename, mediaitem, proxy) {
+        if (filename != '')
+            this.URL = filename
+        else
+            this.URL = mediaitem.URL
+
+        var data = getRemote(this.URL).content
+        
+        //defaults
+        this.version = plxVersion
+        this.background = mediaitem.background
+        this.logo = 'none'
+        if (mediaitem.thumb != 'default')     
+            this.logo = mediaitem.thumb  
+        this.title = ''
+        this.type = 'opml'
+        this.description = ''
+        this.player = mediaitem.player
+        this.playmode = 'default'
+        this.view = 'default'         
+        this.start_index = 0
+        //clear the list
+        this.list.splice(this.list.length)
+        
+        //first process the header
+        var index = data.indexOf('<title>')
+        if (index != -1) {
+            var index2 = data.indexOf('</title>')
+            if (index2 != -1) {
+                value = data.slice(index+7,index2)
+                this.title = value  
+            }
+        }
+        
+        //now process the elements
+        data = data.split('<outline')
+            
+        var counter=0
+        //parse playlist entries 
+        for each (var m in data) {
+            var tmp = new CMediaItem() //create new item
+            //fill the title
+            index = m.indexOf('text=')
+            if (index != -1) {
+                index2 = m.indexOf('"', index+6)
+                if (index2 != -1) {
+                    var value = m.slice(index+6,index2)
+                    tmp.name = value 
+                }
+            }
+            
+            index = m.indexOf('image=')
+            if (index != -1) {
+                index2 = m.indexOf('"', index+7)
+                if (index2 != -1) {
+                    value = m.slice(index+7,index2)
+                    tmp.thumb= value
+                }
+            }
+
+            index = m.indexOf('bitrate=')
+            if (index != -1) {
+                index2 = m.indexOf('"', index+9)
+                if (index2 != -1) {
+                    value = m.slice(index+9,index2)
+                    tmp.infotag= value
+                }
+            }
+            
+            index = m.indexOf('URL=')
+            if (index != -1) {
+                index2 = m.indexOf('"', index+5)
+                if (index2 != -1) {
+                    value = m.slice(index+5,index2)
+                    tmp.URL= value  
+                }
+            }
+            
+            index = m.indexOf('type=')
+            if (index != -1) {
+                index2 = m.indexOf('"', index+6)
+                if (index2 != -1) {
+                    value = m.slice(index+6,index2)
+
+                    if (value == "link") {
+                        tmp.type = 'opml'
+                        if ((tmp.thumb == 'default') && (this.logo != 'none'))
+                            tmp.thumb = this.logo
+                    }
+                    else if (value == 'audio')                   
+                        tmp.type = 'audio'
+                    else                    
+                        tmp.type = 'video'
+                }
+            }
+        
+            if (tmp.name != "")
+                this.list.push(tmp)
+        }
+                                  
+        return 0
+    }
+    
 //-------------------------------- CMediaItem ----------------------------------------------------------------
     
 /*--------------------------------------------------------------------
@@ -2147,13 +2232,6 @@ function CURLLoader()
                 mediaitem.pageurl=v.data['pageurl'];
             }
             mediaitem.processor='';
-
-            /*## cache
-            if v.data['cacheable']>'' and not is_cached:
-                f=open(cache_filename, 'w')
-                f.write(proc_ori)    
-                f.close()
-                showtime.print("Processor cached as " + cache_filename*/
         }
         else{
             // proc v1
