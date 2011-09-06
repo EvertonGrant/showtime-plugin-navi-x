@@ -50,7 +50,7 @@
   
   var nxserver_URL = 'http://navix.turner3d.net';
   
-  var nxserver = new CServer();
+  var nxserver;
   
   var itunes      = new Namespace("http://www.itunes.com/dtds/podcast-1.0.dtd");
   var content = new Namespace("http://purl.org/rss/1.0/modules/content/")
