@@ -2362,7 +2362,7 @@ function CURLLoader()
     /*----------------------------------------------------------------
 # Description: Retrieve remote information.
 # Parameters : URL, retrieval parameters
-# Return     : string containing the page contents; -1: Fail
+# Return     : string containing the page contents;
 /*------------------------------------------------------------------*/  
 function getRemote(url,args){
     var ke= '';
