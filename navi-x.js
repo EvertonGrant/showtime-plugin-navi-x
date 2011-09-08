@@ -104,6 +104,9 @@ function startPage(page) {
     
     page.appendItem(PREFIX+':playlist:'+'playlist:'+escape('http://navix.turner3d.net/playlist/53864/debugging_and_testing_playlist.plx'),
         'directory', {title:'Test'})
+        
+    page.appendItem(PREFIX+':text:'+escape('http://navix.turner3d.net/playlist/53864/debugging_and_testing_playlist.plx'),
+        'directory', {title:'Test'})
     
     page.loading = false;
   }
@@ -134,6 +137,15 @@ plugin.addURI(PREFIX + ":video:(.*):(.*):(.*)", function(page, title, url, proce
         }]    
     });    
     page.type = "video";
+});
+
+plugin.addURI(PREFIX + ":text:(.*)", function(page, url) {
+    var content = showtime.httpGet(unescape(url)).toString();
+    showtime.print("1")
+    page.metadata.content = content
+    page.type = "text";
+    
+    page.loading = false;
 });
 
 plugin.addURI(PREFIX + ":playlist:(.*):(.*)", function(page, type, url) {
@@ -551,28 +563,38 @@ function getFileExtension(filename) {
                         name_final_color+='<font color="#ADFF2F">'+' ('+label2+')'+'</font>';
                     var playlist_link = m.type;
                     playlist_link+=":"+escape(link);
-                    /*if (m.type == "playlist" || m.type == 'favorite' || m.type.slice(0,3) == 'rss' ||
-                        m.type == 'rss_flickr_daily' || m.type == 'directory' ||
-                        m.type == 'html_youtube' || m.type == 'xml_shoutcast' ||
-                        m.type == 'xml_applemovie' || m.type == 'atom' || m.type == 'opml')
-                        page.appendItem(PREFIX + ':playlist:' + playlist_link,"directory", {
-                            title: new showtime.RichText(name_final_color), 
-                            icon: icon
-                        });*/
-                    if (m.type == "image")
-                        page.appendItem(link,"image", {title: new showtime.RichText(name_final_color), icon: icon});
-                    else if (m.type == "audio")
-                        page.appendItem(link,"audio", {title: new showtime.RichText(name_final_color), icon: icon});
-                    else if (m.type == "video")
-                        page.appendItem(PREFIX + ':video:' + escape(m.name) + ":" + escape(link) + ":" + escape(m.processor),"directory", {
-                            title: new showtime.RichText(name_final_color), icon: icon});
-                    else if (m.type != 'script' && m.type!='window' && m.type != 'text' && m.type != 'html' &&
-                        m.type != 'xml_shoutcast' && m.type != 'html_youtube' && m.type == 'directory' &&
-                        m.type == 'xml_applemovie' && m.type == 'favorite')
+                    switch (m.type) {
+                        case "image":
+                            page.appendItem(link,"image", {title: new showtime.RichText(name_final_color), icon: icon});
+                            break;
+                        case "audio":
+                            page.appendItem(link,"audio", {title: new showtime.RichText(name_final_color), icon: icon});
+                            break;
+                        case "video":
+                            page.appendItem(PREFIX + ':video:' + escape(m.name) + ":" + escape(link) + ":" + escape(m.processor),"directory", {
+                                title: new showtime.RichText(name_final_color), icon: icon});
+                            break;
+                        case "text":
+                            page.appendItem(PREFIX + ':text:' + escape(m.URL),"directory", {
+                                title: new showtime.RichText(name_final_color), icon: icon});
+                            break;
+                        default:
+                            page.appendItem(PREFIX + ':playlist:' + playlist_link,"directory", {
+                                title: new showtime.RichText(name_final_color), 
+                                icon: icon
+                            });
+                            break;
+                            
+                    }
+                    /*if (m.type != 'script' && m.type!='window' && m.type != 'html' &&
+                        m.type != 'xml_shoutcast' && m.type != 'html_youtube' && m.type != 'directory' &&
+                        m.type != 'xml_applemovie' && m.type != 'favorite') {
                         page.appendItem(PREFIX + ':playlist:' + playlist_link,"directory", {
                             title: new showtime.RichText(name_final_color), 
                             icon: icon
                         });
+                        showtime.print(m.type)
+                        }*/
                     
                     n=n+1;
                     if (n >= this.page_size)
@@ -736,6 +758,7 @@ function CPlayList()
             showtime.trace(err);
             return -2
         }
+        
         var start = new Date();
         //defaults
         this.version = '-1';
