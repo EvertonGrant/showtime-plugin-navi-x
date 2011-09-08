@@ -105,8 +105,8 @@ function startPage(page) {
     page.appendItem(PREFIX+':playlist:'+'playlist:'+escape('http://navix.turner3d.net/playlist/53864/debugging_and_testing_playlist.plx'),
         'directory', {title:'Test'})
         
-    page.appendItem(PREFIX+':text:'+escape('http://navix.turner3d.net/playlist/53864/debugging_and_testing_playlist.plx'),
-        'directory', {title:'Test'})
+    page.appendItem('http://navix.turner3d.net/playlist/53864/debugging_and_testing_playlist.plx',
+        'text', {title:'Test'})
     
     page.loading = false;
   }
@@ -141,7 +141,6 @@ plugin.addURI(PREFIX + ":video:(.*):(.*):(.*)", function(page, title, url, proce
 
 plugin.addURI(PREFIX + ":text:(.*)", function(page, url) {
     var content = showtime.httpGet(unescape(url)).toString();
-    showtime.print("1")
     page.metadata.content = content
     page.type = "text";
     
@@ -593,8 +592,7 @@ function getFileExtension(filename) {
                             title: new showtime.RichText(name_final_color), 
                             icon: icon
                         });
-                        showtime.print(m.type)
-                        }*/
+                    }*/
                     
                     n=n+1;
                     if (n >= this.page_size)
