@@ -567,7 +567,8 @@ function getFileExtension(filename) {
                         page.appendItem(PREFIX + ':video:' + escape(m.name) + ":" + escape(link) + ":" + escape(m.processor),"directory", {
                             title: new showtime.RichText(name_final_color), icon: icon});
                     else if (m.type != 'script' && m.type!='window' && m.type != 'text' && m.type != 'html' &&
-                        m.type != 'xml_shoutcast' && m.type != 'html_youtube')
+                        m.type != 'xml_shoutcast' && m.type != 'html_youtube' && m.type == 'directory' &&
+                        m.type == 'xml_applemovie' && m.type == 'favorite')
                         page.appendItem(PREFIX + ':playlist:' + playlist_link,"directory", {
                             title: new showtime.RichText(name_final_color), 
                             icon: icon
