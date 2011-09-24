@@ -73,7 +73,7 @@
     service.backgroundEnabled = v;
   });
 
-  settings.createInt("processorDebug", "Background", 0, 0, 4, 1, '', function(v) {
+  settings.createInt("processorDebug", "Processor Debugging", 0, 0, 4, 1, '', function(v) {
     service.processorDebug = v;
   });
   
@@ -103,10 +103,7 @@ function startPage(page) {
     }
     
     page.appendItem(PREFIX+':playlist:'+'playlist:'+escape('http://navix.turner3d.net/playlist/53864/debugging_and_testing_playlist.plx'),
-        'directory', {title:'Test'})
-        
-    page.appendItem('http://navix.turner3d.net/playlist/53864/debugging_and_testing_playlist.plx',
-        'text', {title:'Test'})
+        'directory', {title:'Test - Debug'})
     
     page.loading = false;
   }
@@ -127,8 +124,7 @@ plugin.addURI(PREFIX + ":video:(.*):(.*):(.*)", function(page, title, url, proce
                 'URL: '+mediaitem.URL + '\nProcessor: '+mediaitem.processor);
             return;
         }
-    
-    
+        
     page.source = "videoparams:" + showtime.JSONEncode({      
         title: unescape(title),     
         sources: [
@@ -207,14 +203,13 @@ plugin.addURI(PREFIX + ":playlist:(.*):(.*)", function(page, type, url) {
             var mediaitem
         
             //youtube search
-            if ((item.type == 'search_youtube') || (search_type == 'html_youtube')) {
+            if (item.type == 'search_youtube') {
                 fn = searchstring.replace(/ /g,'+')
                 if (item.URL != '')
                     URL = item.URL
                 else
                     URL = 'http://gdata.youtube.com/feeds/base/videos?max-results=50&alt=rss&q='
                 URL = URL + fn
-                showtime.trace(item.URL)
                 // Use for now Published sort by default
                 URL = URL + '&orderby=published'
                
@@ -288,19 +283,12 @@ function getFileExtension(filename) {
         /*------------------------------------------------------------------*/
         function ParsePlaylist(page, URL, mediaitem, start_index, reload, proxy)
         {
-            //avoid recursive call of this function by setting state to busy.
-            //this.state_busy = 1
-
             /*The application contains 4 CPlayList objects:
             #(1)main list
             #Parameter 'this.pl_focus' points to the playlist in focus (1-4).*/
             var playlist = this.pl_focus;
-            showtime.trace(URL)
-            /*if (reload == false)
-                mediaitem = this.mediaitem;*/
             
             var type = mediaitem.GetType(0);
-            showtime.trace(type);
             
             if (reload == true)
             {
@@ -374,56 +362,15 @@ function getFileExtension(filename) {
                     m = background_image1;
                 page.metadata.background = m;
             }
-                
-            
-            /*else if (m != 'previous') //URL to image located elsewhere
-                ext = getFileExtension(m)
-                loader = CFileLoader2() #file loader
-                loader.load(m, imageCacheDir + "background." + ext, proxy="ENABLED", content_type='image')
-                if loader.state == 0:
-                    this.bg.setImage(loader.localfile)
-                    this.bg1.setImage(imageDir + background_image2)*/  
             
             m = this.playlist.logo;
             page.metadata.logo = m;
             
-//            playlist.view = 'thumbnails'
-            showtime.trace(playlist.view);
             var newview = SetListView(playlist.view);
             page.contents = newview;
             
-            /*if ((newview == 'array') && (playlist.description != ""))
-                newview = this.list2;*/
-            
-            /*page.contents = newview;
-            
-            this.list = newview;
-            listcontrol = newview;*/
-    
-            /*if newview == this.list5:
-                this.page_size = 50              
-            else:  
-                this.page_size = 200             
-
-            this.list2tb.controlDown(this.list)
-            this.list2tb.controlUp(this.list)
-            
-            filter the playlist for parental control.
-            this.FilterPlaylist()*/
-            
             //Display the playlist page
             SelectPage(page, start_index / page_size, start_index % page_size, false); 
-            
-            /*
-            this.loading.setVisible(0)
-            listcontrol.setVisible(1)
-                             
-            if playlist.description != '':
-                this.list2tb.reset()
-                this.list2tb.setText(playlist.description)
-                this.list2tb.setVisible(1)      
-           
-            this.state_busy = 0*/
             
             return 0 //success
         }
@@ -466,19 +413,8 @@ function getFileExtension(filename) {
         /*------------------------------------------------------------------*/
         function SelectPage(page, current_page, start_pos, append)
         {
-            var start = new Date()
-            this.state_busy = 1;
-            
             var playlist = this.pl_focus;
             this.current_page = current_page;
-
-            /*if (append == false)
-            {
-                //listcontrol.reset() #clear the list control view
-                this.list1.reset()
-                this.list2.reset()
-                this.list5.reset() 
-            }*/
 
             var today=new Date();
             var n=0;
@@ -488,9 +424,6 @@ function getFileExtension(filename) {
                 if (parseInt(m.version) <= parseInt(plxVersion))
                 {
                     var icon = getPlEntryThumb(m)
-                    
-                    /*if this.list == this.list5:
-                        icon = this.getPlEntryThumb(m)*/
                     
                     var label2='';
                     //if True:
@@ -525,12 +458,6 @@ function getFileExtension(filename) {
                         }
                     }
                     
-                    /*if (m.infotag != '')
-                        label2 = label2 + ' ' + m.infotag;
-                            
-                    if (m.description != '')
-                        label2 = label2 + ' >';*/
-                    
                     var link = m.URL;
                     
                     var name_final_color = '';
@@ -541,13 +468,10 @@ function getFileExtension(filename) {
                     {
                         var color_index = name.indexOf('[COLOR=FF');
                         var color = name.slice(color_index+9, name.indexOf(']', color_index));
-                        //showtime.trace(color);
                         var text = name.slice(name.indexOf(']')+1, name.indexOf('[/COLOR]'));
-                        //showtime.trace(text);
                         var tmp_name1 = name.slice(0, color_index);
                         var tmp_name2 = text;
                         tmp_name3 = name.slice(name.indexOf('[/COLOR]')+8, name.length);
-                        //showtime.trace(tmp_name1+tmp_name2+tmp_name3);
                         name = name.toString().replace(name.toString().slice(color_index, name.indexOf(']', color_index)+1), '');
                         name = name.toString().replace(name.toString().slice(color_index, name.indexOf('[/COLOR]')+8), '');
                         name_final_color+=tmp_name1+
@@ -585,22 +509,8 @@ function getFileExtension(filename) {
                             break;
                             
                     }
-                    /*if (m.type != 'script' && m.type!='window' && m.type != 'html' &&
-                        m.type != 'xml_shoutcast' && m.type != 'html_youtube' && m.type != 'directory' &&
-                        m.type != 'xml_applemovie' && m.type != 'favorite') {
-                        page.appendItem(PREFIX + ':playlist:' + playlist_link,"directory", {
-                            title: new showtime.RichText(name_final_color), 
-                            icon: icon
-                        });
-                    }*/
-                    
-                    n=n+1;
-                    if (n >= this.page_size)
-                        break; //m
                 }
             }
-            var end = new Date()
-            showtime.trace("Time used to append items: "+(end-start))
         }
         
         /*--------------------------------------------------------------------
@@ -757,7 +667,6 @@ function CPlayList()
             return -2
         }
         
-        var start = new Date();
         //defaults
         this.version = '-1';
         this.background = mediaitem.background;
@@ -961,9 +870,6 @@ function CPlayList()
 #the next lines to not work because they current playlist is already lost.
 #        if this.version == '-1':
 #            return -2*/
-        
-        var end = new Date();
-        showtime.trace("Time used to parse playlist: "+(end-start))
         
         return 0 //successful
     }
@@ -1808,7 +1714,6 @@ function CURLLoader()
 
                 // get instructions if args present
                 if (proc_args>''){
-                    //SetInfoText("Processor: phase "+str(phase)+" learn")
                     showtime.trace("Processor: phase "+phase.toString()+" learn");
                     inst=getRemote(mediaitem.processor+'?'+proc_args)['content'];
                     proc_args='';
@@ -1909,9 +1814,7 @@ function CURLLoader()
                             showtime.trace(scrape_args);
                         }
                         remoteObj=getRemote(v.data['s_url'], scrape_args);
-                        //showtime.trace(remoteObj);
-
-
+                        
                         v.data['htmRaw']=remoteObj['content'];
                         v.data['geturl']=remoteObj['geturl'];
                         // backwards-compatibility for pre 3.5.4
@@ -1919,9 +1822,7 @@ function CURLLoader()
                             v.data['v1']=v.data['geturl'];
                         str_out="Proc debug headers:";
                         for (ke in remoteObj['headers']){
-                            //showtime.trace(ke);
                             hkey='headers.'+ke;
-                            //showtime.trace(hkey);
                             str_out=str_out+"\n "+ke+": "+remoteObj['headers'][ke].toString();
                             v.data[hkey]=remoteObj['headers'][ke].toString();
                         }
@@ -1936,19 +1837,6 @@ function CURLLoader()
                         }
                         if (verbose>0)
                             showtime.trace(str_out);
-
-/*                        if (v.data['s_action']=='headers')
-#                            headers=remoteObj
-#                            str_out="Proc debug headers:"
-#                            for ke in headers:
-#                                str_out=str_out+"\n "+ke+": "+str(headers[ke])
-#                                v.data[ke]=str(headers[ke])
-#                            if verbose>0:
-#                                showtime.trace(str_out
-#                        elif v.data['s_action']=='geturl':
-#                            v.data['v1']=remoteObj
-#                        else:
-#                            v.data['htmRaw']=remoteObj*/
 
                         if (v.data['s_action']=='read' && v.data['regex']>'' && v.data['htmRaw']>''){
                             // get finished - run regex, populate v(alues) and rep(ort) if regex is defined
@@ -2532,7 +2420,7 @@ function CServer() {
     this.login = CServer_login;
     this.is_user_logged_in = CServer_is_user_logged_in;
     
-    this.login();
+    //this.login();
 }
 
     /*--------------------------------------------------------------------
@@ -2567,7 +2455,7 @@ function CServer() {
                 reason = 'Login failed, try again';	
                 continue;      
             }      
-            showtime.trace('Logged in to Headweb as user: ' + credentials.username);
+            showtime.trace('Logged in to Navi-X as user: ' + credentials.username);
             this.user_id = v.toString();
             return false;    
         }
