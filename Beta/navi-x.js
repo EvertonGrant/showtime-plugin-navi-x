@@ -1906,7 +1906,7 @@ function CURLLoader() {
                 
                 for each (var line in lines) {
                     linenum=linenum+1
-                    line=line.replace(/^\s*/, '');
+                    line=line.replace(/^\s*/, '').replace(/\s\s*$/, '');
 
                     if (verbose>0 && src_printed==false) {
                         showtime.trace("Processor NIPL source:\n"+inst);
@@ -2015,7 +2015,7 @@ function CURLLoader() {
 #                        else:
 #                            v.data['htmRaw']=remoteObj
                         */
-
+showtime.print(v.data['s_action'])
                         if (v.data['s_action']=='read' && v.data['regex']>'' && v.data['htmRaw']>'') {
                             // get finished - run regex, populate v(alues) and rep(ort) if regex is defined
                             v.data['nomatch']=''
@@ -2027,6 +2027,7 @@ function CURLLoader() {
                             }
                             var p=new RegExp(v.data['regex'])
                             match=p.exec(v.data['htmRaw'])
+                            showtime.print(match)
                             if (match) {
                                 var rerep='Processor scrape:';
                                 for (i=1; i < match.length; i++) {
@@ -2432,7 +2433,7 @@ function CURLLoader() {
         }
 
         this.loc_url = mediaitem.URL
-        video_link = mediaitem.URL;
+        video_link = unescape(mediaitem.URL);
 
         showtime.sleep(.1)
         var report="Processor final result:\n URL: "+this.loc_url
