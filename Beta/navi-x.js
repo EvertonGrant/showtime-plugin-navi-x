@@ -2169,7 +2169,7 @@ showtime.print(v.data['s_action'])
                                 // set variable
                                 treport="variable"
                                 tsubj=subj
-                                v.data[subj]=val
+                                v.data[subj]=unescape(val)
                             }
 
                             if (verbose>0)
@@ -2265,14 +2265,14 @@ showtime.print(v.data['s_action'])
                                     showtime.trace("Processor syntax error: "+line);
                                     return -1
                                 }
-                                ke=match.group(1)
-                                va=match.group(3)
+                                ke=match[1]
+                                va=match[3]
                                 if (va.slice(0,1)=="'")
                                     va=va.slice(1);
                                 else
                                     va=v.data[va]
                                 oldtmp=v.data[ke]
-                                v.data[ke]=re.sub(v.data['regex'], va, v.data[ke])
+                                v.data[ke]=v.data[ke].toString().replace(v.data['regex'], va);
                                 if (verbose>0)
                                     showtime.trace("Proc debug replace "+ke+":\n old="+oldtmp+"\n new="+v.data[ke]);
                             }
@@ -2432,7 +2432,7 @@ showtime.print(v.data['s_action'])
             }
         }
 
-        this.loc_url = mediaitem.URL
+        this.loc_url = unescape(mediaitem.URL)
         video_link = unescape(mediaitem.URL);
 
         showtime.sleep(.1)

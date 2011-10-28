@@ -11,6 +11,7 @@ https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=EU3RR79YMKR
 
 
 ## Processors currently tested and working:
+- Google Video
 - Megavideo
 - MovReel
 - Videofriender
