@@ -10,6 +10,12 @@ Now the link:
 https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=EU3RR79YMKRXU
 
 
+## Processors currently tested and working:
+- Megavideo
+- MovReel
+- Videofriender
+
+
 ## Features currently supported:
 - PLX support
 - XML support
