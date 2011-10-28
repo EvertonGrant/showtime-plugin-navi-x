@@ -2233,7 +2233,7 @@ showtime.print(v.data['s_action'])
                                 }
                                 p=new RegExp(v.data['regex'])
                                 try {
-                                    match=p.exec(v.data[arg])
+                                    match=p.exec(unescape(v.data[arg]))
                                 }
                                 catch(err) {
                                     v.data['nomatch']=1
@@ -2433,7 +2433,7 @@ showtime.print(v.data['s_action'])
         }
 
         this.loc_url = unescape(mediaitem.URL)
-        video_link = unescape(mediaitem.URL);
+        video_link = unescape(mediaitem.URL).replace(/\\/g,'');
 
         showtime.sleep(.1)
         var report="Processor final result:\n URL: "+this.loc_url

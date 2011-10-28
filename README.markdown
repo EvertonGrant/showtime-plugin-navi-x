@@ -14,6 +14,9 @@ https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=EU3RR79YMKR
 - ABC
 - BBC
 - CBS
+- Crackle TV
+- DivxStage
+- FilmTrailer
 - Google Video
 - Megavideo
 - MovReel
