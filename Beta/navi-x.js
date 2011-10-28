@@ -88,6 +88,8 @@ function startPage(page) {
     
     page.appendItem(PREFIX+':playlist:'+'playlist:'+escape('http://navix.turner3d.net/playlist/53864/debugging_and_testing_playlist.plx'),
         'directory', {title:'Test - Debug'})
+        
+    page.appendItem(PREFIX+':video:'+'Test:'+escape('http://stagevu.com/video/srpfmbeqxlwe')+':'+escape('http://navix.turner3d.net/proc/stagevu'), 'video', {title: 'Test'});
     
     page.loading = false;
   }
@@ -1800,10 +1802,8 @@ function CURLLoader() {
             mediaitem.processor = "http://navix.turner3d.net/proc/youtube";
             result = this.geturl_processor(mediaitem);
         }
-        else if (URL.slice(0,4) == 'http')
-            result = this.geturl_redirect(URL);
         else
-            this.loc_url = URL;
+            video_link = unescape(URL);
         
         return result;
     }

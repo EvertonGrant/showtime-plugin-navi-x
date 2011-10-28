@@ -10,10 +10,14 @@ Now the link:
 https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=EU3RR79YMKRXU
 
 
-## Processors currently tested and working:
+## Processors currently tested and working (if it fails is because the video was removed):
+- ABC
+- BBC
+- CBS
 - Google Video
 - Megavideo
 - MovReel
+- Movshare
 - Videofriender
 
 
