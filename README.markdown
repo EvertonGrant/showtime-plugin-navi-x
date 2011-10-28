@@ -17,11 +17,23 @@ https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=EU3RR79YMKR
 - Crackle TV
 - DivxStage
 - FilmTrailer
+- Fragg.me
+- G4TV
+- Gamespot
+- GameKings
 - Google Video
 - Megavideo
 - MovReel
-- Movshare
+- Movshare (some don't work)
+- NBC
+- NFL
+- PBS Kids
+- Syfy
+- Youtube Shows
 - Videofriender
+
+### Not working:
+- Putlocker
 
 
 ## Features currently supported:
