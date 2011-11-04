@@ -21,15 +21,6 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-/* Currently working processors:
- * - Megavideo (no bypass)
- * - VideoFriender
- * - AnimeFreak.tv
- * - MovShare
- * - StageVu
- *
- */
-
 
 (function(plugin) {
 
@@ -38,8 +29,6 @@
   var home_URL = 'http://www.navi-x.org/playlists/home.plx';
   var home_URL_mirror='http://navi-x.googlecode.com/svn/trunk/Playlists/home.plx';
   var page_size = 200 //display maximum 200 entries on one page
-  var Version='3'; 
-  var SubVersion='7';
   var plxVersion = '8';
   
   var background_image1 = plugin.path + 'resources/background1.jpg';
@@ -48,12 +37,7 @@
   
   var video_link = '';
   
-  var nxserver_URL = 'http://navix.turner3d.net';
-  
   var nxserver;
-  
-  var itunes      = new Namespace("http://www.itunes.com/dtds/podcast-1.0.dtd");
-  var content = new Namespace("http://purl.org/rss/1.0/modules/content/")
   
 //settings 
 
@@ -104,7 +88,7 @@ function startPage(page) {
     
     page.appendItem(PREFIX+':playlist:'+'playlist:'+escape('http://navix.turner3d.net/playlist/53864/debugging_and_testing_playlist.plx'),
         'directory', {title:'Test - Debug'})
-    
+        
     page.loading = false;
   }
 
@@ -135,10 +119,13 @@ plugin.addURI(PREFIX + ":video:(.*):(.*):(.*)", function(page, title, url, proce
     page.type = "video";
 });
 
-plugin.addURI(PREFIX + ":text:(.*)", function(page, url) {
+plugin.addURI(PREFIX + ":text:(.*):(.*)", function(page, title, url) {
+    page.type = "item";
+    
     var content = showtime.httpGet(unescape(url)).toString();
-    page.metadata.content = content
-    page.type = "text";
+    page.appendPassiveItem("bodytext", new showtime.RichText(content));
+    
+    page.metadata.title = unescape(title)
     
     page.loading = false;
 });
@@ -498,7 +485,7 @@ function getFileExtension(filename) {
                                 title: new showtime.RichText(name_final_color), icon: icon});
                             break;
                         case "text":
-                            page.appendItem(PREFIX + ':text:' + escape(m.URL),"directory", {
+                            page.appendItem(PREFIX + ':text:' + escape(m.name) + ':' + escape(m.URL),"directory", {
                                 title: new showtime.RichText(name_final_color), icon: icon});
                             break;
                         default:
@@ -1586,690 +1573,70 @@ function CMediaItem()
         }
         return value;
     }
+
+
+/*--------------------------------------------------------------------
+# Description: Text viewer
+/*------------------------------------------------------------------*/
+function CServer() {
+    //public member of CServer class.
+    this.user_id = '';
     
+    this.login = CServer_login;
+    this.is_user_logged_in = CServer_is_user_logged_in;
     
-function CURLLoader()
-{
-    this.parent=0;
-    this.urlopen = CURLLoader_urlopen;
-    this.geturl_processor = CURLLoader_geturl_processor;
+    //this.login();
 }
 
-    function re_match(pregex,str){
-	// attempt to execute python-style regexp in javascript
-	// note: \n will not currently match a \s when using (?s)
-	var switches='';
-	if(pregex.search(/^\(\?([gmsi]+)\)/)==0){
-		switches=RegExp.$1;
-		pregex=pregex.replace(/^\(\?[gmsi]+\)/,'');
-	}
-	if(switches.match(/s/)){
-		// multi-line hack
-		switches=switches.replace(/s/,'');
-		pregex=pregex.replace(/\\n/g,'\\s');
-		str=str.replace(/\n/g," ");
-	}
-	var re=new RegExp(pregex,switches);
-	var matches=re.exec(str);
-	return matches;
-    }
-
     /*--------------------------------------------------------------------
-    # Description: This class is used to retrieve the direct URL of given
-    #              URL which the Showtime player understands.
-    #              
-    # Parameters : URL=source URL, mediaitem = mediaitem to open
-    # Return     : 0=successful, -1=fail
-    /*------------------------------------------------------------------*/
-    function CURLLoader_urlopen(URL, mediaitem)
-    {
-        var result = 0; //successful
-        showtime.trace(getFileExtension(URL))
-        if (mediaitem.processor != '')
-            result = this.geturl_processor(mediaitem);
-        else if (URL.indexOf('http://www.youtube.com') != -1){
-            mediaitem.processor = "http://navix.turner3d.net/proc/youtube";
-            result = this.geturl_processor(mediaitem);
-        }
-        else if (URL.slice(0,4) == 'http'){
-            result = this.geturl_processor(mediaitem);
-            //result = this.geturl_redirect(URL);
-        }
-        else
-            this.loc_url = URL;
+    # Description: -
+    # Parameters : -
+    # Return     : -
+    /*------------------------------------------------------------------*/            
+    function CServer_login() {
+        if(this.is_user_logged_in())      
+            return false;    
         
-        return result;
-    }
-    
-    var phase, htmRaw, inst, verbose, proc_args, inst_prev, headers, v, remoteObj;
-    var lines, linenum, ln_last, ln_count, scrape, src_printed, if_satisfied, if_next, if_end;
-    var exflag, phase1complete, ke, va, str_out, noexec, subj, arg, tsubj, str_info, hkey, rerep;
-    var lkey, oper, rraw, rside, bool, if_report, oldtmp, dp_type, dp_key;
-    var lparse=new RegExp(/^([^ =]+)([ =])(.+)$/);
-    var ifparse=new RegExp(/^([^<>=!]+)\s*([!<>=]+)\s*(.+)$/);
-    var def_agent='Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.9.0.4) Gecko/2008102920 Firefox/3.0.4';
+        var reason = "Login required";    
+        var do_query = false;    
+        while(1) {      
+            var credentials = plugin.getAuthCredentials("Navi-X",	
+            reason, do_query);          
+            
+            if(!credentials) {	
+                if(!do_query) {	  
+                    do_query = true;	  
+                    continue;	
+                }	
+                return "No credentials";      
+            }      
+            if(credentials.rejected)	
+                return "Rejected by user";      
+            var v = showtime.httpPost("http://navix.turner3d.net/login/", {	
+                username: credentials.username,	password: credentials.password      
+            });            
+            var doc = v.toString();            
+            if(doc == '') {	
+                reason = 'Login failed, try again';	
+                continue;      
+            }      
+            showtime.trace('Logged in to Navi-X as user: ' + credentials.username);
+            this.user_id = v.toString();
+            return false;    
+        }
+    }    
     
     /*--------------------------------------------------------------------
-    # Description: This class is used to retrieve media playback
-    #              parameters using a processor server
-    #              
-    # Parameters : mediaitem = mediaitem to open
-    # Return     : 0=successful, -1=fail
-    /*------------------------------------------------------------------*/
-    function CURLLoader_geturl_processor(mediaitem){
-        htmRaw="";
-
-        if (htmRaw==""){
-            showtime.trace("Processor: phase 1 - query\n URL: "+mediaitem.URL+"\n Processor: "+mediaitem.processor);
-            //SetInfoText("Processor: getting filter...")
-            htmRaw=getRemote(mediaitem.processor+'?url='+escape(mediaitem.URL),{'cookie':'version='+Version+'.'+SubVersion+'; platform='+'linux'})['content'];
-            //proc_ori=htmRaw;
-        }
-        if (htmRaw <= ''){
-            showtime.trace("Processor error: nothing returned from learning phase");
-            //SetInfoText("")
-            return -1;
-        }
-        if (htmRaw.slice(0,2)=='v2'){
-            htmRaw=htmRaw.slice(3);
-            inst=htmRaw;
-            htmRaw='';
-            phase=0;
-            exflag=false;
-            phase1complete=false;
-            verbose=service.processorDebug;
-            proc_args='';
-            inst_prev='';
-            headers={};
-
-            v=new NIPLVars();
-
-            // dot property parser
-            var dotvarparse=new RegExp('^(nookies|s_headers)\.(.+)$');
-            
-            // condition parser
-            ifparse=new RegExp('^([^<>=!]+)\s*([!<>=]+)\s*(.+)$');
-
-            // dot property parser
-            dotvarparse=new RegExp('^(nookies|s_headers)\.(.+)$');
-
-            /*nookies=NookiesRead(mediaitem.processor)
-            for ke in nookies:
-                hkey='nookies.'+ke
-                v.data[hkey]=nookies[ke]['value']*/
-
-            while (exflag==false){
-                scrape=1;
-                phase=phase+1;
-                var rep={};
-
-                if_satisfied=false;
-                if_next=false;
-                if_end=false;
-
-                src_printed=false;
-
-                // load defaults into v, leave undefined keys alone
-		v.reset();
-
-                // get instructions if args present
-                if (proc_args>''){
-                    showtime.trace("Processor: phase "+phase.toString()+" learn");
-                    inst=getRemote(mediaitem.processor+'?'+proc_args)['content'];
-                    proc_args='';
-                }
-                else if (phase1complete){
-                    //SetInfoText("")
-                    showtime.trace("Processor error: nothing to do");
-                    exflag=true
-                }
-                else
-                    v.data['s_url']=mediaitem.URL;
-
-                if (inst==inst_prev){
-                    showtime.trace("Processor error: endless loop detected");
-                    //SetInfoText("")
-                    return -1;
-                }
-
-                inst_prev=inst;
-                lines=inst.split("\n");
-                if (lines.length < 1){
-                    showtime.trace("Processor error: nothing returned from phase "+phase.toString());
-                    //SetInfoText("")
-                    return -1;
-                }
-                linenum=0;
-                
-                for each (var line in lines){
-                    //showtime.trace(line);
-                    linenum++;
-                    line=line.replace(/^\s*/, '');
-                    //showtime.trace(line);
-                    if (verbose>0 && src_printed==false){
-                        showtime.trace("Processor NIPL source:\n"+inst);
-                        src_printed=true;
-                    }
-                    if (line>'' && verbose>1){
-                        noexec='';
-                        if (if_next || if_end)
-                            noexec=' (skipped)';
-                        var str_report="NIPL line "+linenum+noexec+": "+line;
-                        if (verbose>2 && (if_next || if_satisfied || if_end))
-                            str_report=str_report+"\n (IF: satisfied="+if_satisfied.toString()+", skip to next="+if_next.toString()+", skip to end="+if_end.toString()+")";
-                        showtime.trace(str_report);
-                    }
-                    // skip comments and blanks
-                    if (line.slice(0,1)=='#' || line.slice(0,2)=='//' || line=='')
-                        continue
-
-                    if (if_end && line!='endif')
-                        continue
-
-                    if (if_next && line.slice(0,5)!='elseif' && line!='else' && line!='endif')
-                        continue;
-
-                    if (line=='else'){
-                        if (if_satisfied)
-                            if_end=true;
-                        else {
-                            if_next=false;
-                            if (verbose>0)
-                                showtime.trace("Proc debug else: executing");
-                        }
-                        continue
-                    }
-                    else if (line=='endif') {
-                        if_satisfied=false;
-                        if_next=false;
-                        if_end=false;
-                        continue;
-                    }
-                    else if (line=='scrape') {
-                        str_info="Processor:";
-                        if (phase>1)
-                            str_info=str_info+" phase "+phase;
-                        str_info=str_info+" scrape";
-                        if (scrape>1)
-                            str_info=str_info+" "+scrape;
-                        //SetInfoText(str_info)
-                        if (v.data['s_url']==''){
-                            showtime.trace("Processor error: no scrape URL defined");
-                            //SetInfoText("")
-                            return -1;
-                        }
-                        scrape++
-                        var scrape_args={
-                          'referer': v.data['s_referer'],
-                          'cookie': v.data['s_cookie'],
-                          'method': v.data['s_method'],
-                          'agent': v.data['s_agent'],
-                          'action': v.data['s_action'],
-                          'postdata': v.data['s_postdata'],
-                          'headers': headers
-                        };
-                        showtime.trace("Processor "+v.data['s_method'].toUpperCase()+"."+v.data['s_action']+": "+v.data['s_url']);
-                        if (verbose>0) {
-                            showtime.trace("Proc debug remote args:");
-                            showtime.trace(scrape_args);
-                        }
-                        remoteObj=getRemote(v.data['s_url'], scrape_args);
-                        
-                        v.data['htmRaw']=remoteObj['content'];
-                        v.data['geturl']=remoteObj['geturl'];
-                        // backwards-compatibility for pre 3.5.4
-                        if (v.data['s_action']=='geturl')
-                            v.data['v1']=v.data['geturl'];
-                        str_out="Proc debug headers:";
-                        for (ke in remoteObj['headers']){
-                            hkey='headers.'+ke;
-                            str_out=str_out+"\n "+ke+": "+remoteObj['headers'][ke].toString();
-                            v.data[hkey]=remoteObj['headers'][ke].toString();
-                        }
-                        if (verbose>0)
-                            showtime.trace(str_out);
-
-                        str_out="Proc debug cookies:";
-                        for (ke in remoteObj['cookies']){
-                            hkey='cookies.'+ke;
-                            str_out=str_out+"\n "+ke+": "+remoteObj['cookies'][ke].toString();
-                            v.data[hkey]=remoteObj['cookies'][ke].toString();
-                        }
-                        if (verbose>0)
-                            showtime.trace(str_out);
-
-                        if (v.data['s_action']=='read' && v.data['regex']>'' && v.data['htmRaw']>''){
-                            // get finished - run regex, populate v(alues) and rep(ort) if regex is defined
-                            v.data['nomatch']='';
-                            rep['nomatch']='';
-                            for (i=1; i < 12; i++){
-                                ke='v'+i.toString();
-                                v.data[ke]='';
-                                rep[ke]='';
-                            }
-                            var match=re_match(v.data['regex'],v.data['htmRaw']);
-                            if (match){
-                                rerep='Processor scrape:';
-                                for(i=1;i<match.length;i++){
-                                    val=match[i];
-                                    var key='v'+i.toString();
-                                    rerep=rerep+"\n "+key+'='+val;
-                                    rep[key]=val;
-                                    v.data[key]=val;
-                                }
-                                if (verbose>0)
-                                    showtime.trace(rerep);
-                            }
-                            else{
-                                if (verbose>0)
-                                    showtime.trace('Processor scrape: no match');
-                                rep['nomatch']=1;
-                                v.data['nomatch']=1;
-                            }
-                        }
-                        // reset scrape params to defaults
-                        v.data['s_method']='get';
-			v.data['s_action']='read';
-			v.data['s_agent']=def_agent;
-			v.data['s_referer']='';
-			v.data['s_cookie']='';
-			v.data['s_postdata']='';
-                    }
-                    else if (line=='play'){
-                        if (verbose==1)
-                            showtime.trace("Proc debug: play");
-                        exflag=true;
-                        break;
-                    }
-                    else if (line=='report'){
-                        rep['phase']=phase.toString();
-                        proc_args=urlencode(rep);
-                        proc_args=proc_args.replace('v\d+=&','&');
-                        proc_args=proc_args.replace('nomatch=&','&');
-                        proc_args=proc_args.replace('&+','&');
-                        proc_args=proc_args.replace('^&','');
-                        str_report="Processor report:";
-                        try{
-                        for each (var ke in rep){
-                            if (rep[ke]>'')
-                                str_report=str_report+"\n "+ke+": "+rep[ke];
-                        }
-                        }
-                        catch(err){
-                            continue;
-                        }
-                        showtime.trace(str_report);
-                        break;
-                    }
-                    else{
-                        if (line.indexOf(/^\s*/)!=-1)
-                            break;
-                        // parse
-                        match=lparse.exec(line)
-                        showtime.trace(match)
-                        if (!match){
-                            showtime.trace("Processor syntax error: "+line);
-                            //SetInfoText("")
-                            return -1;
-                        }
-                        subj=match[1];
-                        arg=match[3];
-                        if (subj=='if' || subj=='elsif'){
-                            if (if_satisfied)
-                                if_end=true
-                            else{
-
-                                // process if / elseif operators
-                                match=ifparse.exec(arg);
-                                if (match){
-                                    // process if with operators
-                                    lkey=match[1];
-                                    oper=match[2];
-                                    rraw=match[3];
-                                    if (oper=='=')
-                                        oper='==';
-                                    if (rraw.slice(0,1)=="'")
-                                        rside=rraw.slice(1,rraw.length);
-                                    else
-                                        rside=v.data[rraw];
-                                    bool=eval("v.data[lkey]"+oper+"rside");
-                                    if_report=" test: "+lkey+" "+oper+" "+rraw+"\n  left: "+v.data[lkey]+"\n right: "+rside;
-                                }
-                                else{
-                                    // process single if argument for >''
-                                    if(!v.data[arg]) v.data[arg]='';
-                                    bool=v.data[arg]>'';
-                                    if_report=arg;
-                                    if (bool)
-                                        if_report=if_report+" > ";
-                                    else
-                                        if_report=if_report+" = ";
-                                    if_report=if_report+"'': "+v.data[arg];
-                                }
-                            }
-                            if (bool){
-                                if_satisfied=true;
-                                if_next=false;
-                            }
-                            else
-                                if_next=true;
-
-                            if (verbose>0)
-                                showtime.trace("Proc debug "+subj+" => "+bool.toString()+":\n "+if_report);
-                            continue;
-                        }
-                        if (match[2]=='='){
-                            // assignment operator
-                            var areport;
-                            if (arg.slice(0,1)=="'"){
-                                val=arg.slice(1);
-                                areport="string literal";
-                            }
-                            else{
-                                val=v.data[arg];
-                                areport=arg;
-                            }
-                            match=dotvarparse.exec(subj);
-                            if (match){
-                                dp_type=match[1];
-                                dp_key=match[2];
-                                tsubj=dp_key;
-                                /*if (dp_type=='nookies')
-                                    # set nookie
-                                    treport="nookie"
-                                    NookieSet(mediaitem.processor, dp_key, val, v.data['nookie_expires'])
-                                    v.data[subj]=val*/
-
-                                if (dp_type=='s_headers'){
-                                    // set scrape header
-                                    var treport="scrape header";
-                                    headers[dp_key]=val;
-                                }
-                            }
-                            else{
-                                // set variable
-                                treport="variable";
-                                tsubj=subj;
-                                v.data[subj]=val;
-                            }
-                            if (verbose>0)
-                                showtime.trace("Proc debug "+treport+": "+tsubj+" set to "+areport+"\n "+val);
-                        }
-                        else{
-                            // do command
-                            if (subj=='verbose')
-                                verbose=parseInt(arg);
-
-                            else if (subj=='error'){
-                                showtime.trace("Processor error: "+arg.slice(1));
-                               	//SetInfoText("")
-                               	return -1;
-                            }
-                            else if (subj=='report_val'){
-                                match=lparse.exec(arg);
-                                if (!match){
-                                    showtime.trace("Processor syntax error: "+line);
-                                    //SetInfoText("")
-                                    return -1;
-                                }
-                                ke=match[1];
-                                va=match[3];
-                                if (va.slice(0,1)=="'"){
-                                    rep[ke]=va.slice(1,va.length);
-                                    if (verbose>0)
-                                        showtime.trace("Proc debug report value: "+ke+" set to string literal\n "+va.slice(1,va.length));
-                                }
-                                else{
-                                    rep[ke]=v.data[va];
-                                    if (verbose>0)
-                                        showtime.trace("Proc debug report value: "+ke+" set to "+va+"\n "+v.data[va]);
-                                }
-                            }
-                            else if (subj=='concat'){
-                                match=lparse.exec(arg);
-                                if (!match){
-                                    showtime.trace("Processor syntax error: "+line);
-                                    return -1;
-                                }
-                                ke=match[1];
-                                va=match[3];
-                                oldtmp=v.data[ke];
-                                if (va.slice(0,1)=="'")
-                                    v.data[ke]=v.data[ke]+va.slice(1,va.length);
-                                else{
-                                    if (v.data[va] != undefined)
-                                        v.data[ke]=v.data[ke]+v.data[va];
-                                    else
-                                        v.data[ke]=v.data[ke];
-                                }
-                                if (verbose>0)
-                                    showtime.trace("Proc debug concat:\n old="+oldtmp+"\n new="+v.data[ke]);
-                            }
-                            else if (subj=='match'){
-                                v.data['nomatch']='';
-                                rep['nomatch']='';
-                                for (i = 1; i < 12; i++){
-                                    ke='v'+i.toString();
-                                    v.data[ke]='';
-                                    rep[ke]='';
-                                }
-                                match=re_match(v.data['regex'],v.data[arg]);
-
-                                if (match){
-                                    rerep='Processor match '+arg+':';
-                                    for(i=1;i<match.length;i++){
-                                        val=match[i];
-                                        key='v'+i.toString();
-                                        rerep=rerep+"\n "+key+'='+val;
-                                        v.data[key]=val;
-                                    }
-                                    if (verbose>0)
-                                        showtime.trace(rerep);
-                                }
-                                else{
-                                    if (verbose>0)
-                                        showtime.trace("Processor match: no match\n regex: "+v.data['regex']+"\n search: "+v.data[arg]);
-                                    v.data['nomatch']=1;
-                                }
-                            }
-                            else if (subj=='replace'){
-                               // pre-set regex, replace var [']val
-                                match=lparse.exec(arg);
-                                if (!match){
-                                    showtime.trace("Processor syntax error: "+line);
-                                    //SetInfoText("")
-                                    return -1;
-                                }
-                                ke=match[1];
-                                va=match[3];
-                                if (va.slice(0,1)=="'")
-                                    va=va.slice(1,va.length);
-                                else
-                                    va=v.data[va];
-                                oldtmp=v.data[ke];
-                                v.data[ke]=v.data[ke].replace(v.data['regex'], va);
-                                if (verbose>0)
-                                    showtime.trace("Proc debug replace "+ke+":\n old="+oldtmp+"\n new="+v.data[ke]);
-                            }
-                            else if (subj=='unescape'){
-                                oldtmp=v.data[arg];
-                                v.data[arg]=unescape(v.data[arg]);
-                                if (verbose>0)
-                                    showtime.trace("Proc debug unescape:\n old="+oldtmp+"\n new="+v.data[arg]);
-                            }
-                            else if (subj=='escape'){
-                                oldtmp=v.data[arg];
-                                v.data[arg]=escape(v.data[arg]);
-                                if (verbose>0)
-                                    showtime.trace("Proc debug escape:\n old="+oldtmp+"\n new="+v.data[arg]);
-                            }
-                            else if (subj=='debug'){
-                                if (verbose>0) {
-                                    try {
-                                        showtime.trace("Processor debug "+arg+":\n "+v.data[arg])
-                                    }
-                                    catch(err) {
-                                        showtime.trace("Processor debug "+arg+" - does not exist\n")
-                                    }
-                                }
-                            }
-                            else if (subj=='print'){
-                                if (arg.slice(0,1)=="'")
-                                    showtime.trace("Processor print: "+arg.slice(1));
-                                else
-                                    showtime.trace("Processor print("+arg+":\n "+v.data[arg]);
-                            }
-                            else{
-                                showtime.trace("Processor error: unrecognized method '"+subj+"'");
-                                return -1;
-                            }
-                        }
-                    }
-                }
-            }
-            if (v.data['agent']>'')
-                v.data['url']=v.data['url']+'?|User-Agent='+v.data['agent'];
-            mediaitem.URL=v.data['url'];
-            if (v.data['playpath']>'' || v.data['swfplayer']>''){
-                mediaitem.URL=mediaitem.URL+' tcUrl='+v.data['url'];
-                if (v.data['app']>'')
-                    mediaitem.URL=mediaitem.URL+' app='+v.data['app'];
-                if (v.data['playpath']>'')
-                    mediaitem.URL=mediaitem.URL+' playpath='+v.data['playpath'];
-                if (v.data['swfplayer']>'')
-                    mediaitem.URL=mediaitem.URL+' swfUrl='+v.data['swfplayer'];
-                if (v.data['pageurl']>'')
-                    mediaitem.URL=mediaitem.URL+' pageUrl='+v.data['pageurl'];
-                if (v.data['swfVfy']>'')
-                    mediaitem.URL=mediaitem.URL+' swfVfy='+v.data['swfVfy'];
-            }
-            else{
-                mediaitem.swfplayer=v.data['swfplayer'];
-                mediaitem.playpath=v.data['playpath'];
-                mediaitem.pageurl=v.data['pageurl'];
-            }
-            mediaitem.processor='';
-        }
-        else{
-            // proc v1
-            var arr=htmRaw.split("\n");
-            if (arr.length < 1){
-                showtime.trace("Processor error: nothing returned from learning phase");
-                //SetInfoText("")
-                return -1;
-            }
-            URL=arr[0];
-            if (URL.indexOf('error')!=-1){
-                showtime.trace("Processor: "+URL);
-                //SetInfoText("")
-                return -1;
-            }
-            var report="Processor: phase 2 - instruct\n URL: "+URL;
-            if (arr.length < 2){
-                this.loc_url = URL;
-                //SetInfoText("")
-                showtime.trace("Processor: single-line processor stage 1 result\n playing "+URL);
-                return 0;
-            }
-            var filt=arr[1];
-            var ref = '';
-            var cookie='';
-            var htm = '';
-            report=report+"\n filter: "+filt;
-            if (arr.length > 2){
-                ref=arr[2];
-                report+="\n referer: "+ref;
-            }
-            else
-                ref='';
-            if (arr.length > 3){
-                cookie=arr[3];
-                report+="\n cookie: "+cookie;
-            }
-            else
-                cookie='';
-
-            showtime.trace(report);
-            //SetInfoText("Processor: scraping...")
-            htm=getRemote(URL,{'referer':ref,'cookie':cookie})['content'];
-            if (htm == ''){
-                showtime.trace("Processor error: nothing returned from scrape");
-                //SetInfoText("")
-                return -1
-            }
-            var p=new RegExp(filt);
-            match=p.exec(htm);
-            if (match){
-                var tgt=mediaitem.processor;
-                var sep='?';
-                report='Processor: phase 3 - scrape and report';
-                for(var i=1;i<match.length;i++){
-                    var val=escape(match[i]);
-                    tgt=tgt+sep+'v'+i.toString()+'='+val;
-                    sep='&';
-                    report=report+"\n v"+i.toString()+": "+val;
-                }
-                showtime.trace(report);
-                //SetInfoText("Processor: processing...")
-                var htmRaw2=getRemote(tgt)['content'];
-                if (htmRaw2<=''){
-                    showtime.trace("Processor error: could not retrieve data from process phase");
-                    //SetInfoText("")
-                    return -1;
-                }
-                arr=htmRaw2.split("\n");
-                mediaitem.URL=arr[0];
-
-                if (arr[0].indexOf('error')!=-1){
-                    showtime.trace("Processor: "+arr[0]);
-                    //SetInfoText("")
-                    return -1;
-                }
-                if (arr.length > 1){ //No need to heck for rtmp availability in Showtime
-                    mediaitem.URL=mediaitem.URL+' tcUrl='+arr[0]+' swfUrl='+arr[1];
-                    if (arr.length > 2)
-                        mediaitem.URL=mediaitem.URL+' playpath='+arr[2];
-                    if (arr.length > 3)
-                        mediaitem.URL=mediaitem.URL+' pageUrl='+arr[3];
-                }
-                mediaitem.processor='';
-            }
-            else{
-                showtime.trace("Processor error: pattern not found in scraped data");
-                //SetInfoText("")
-                return -1;
-            }
-        }
-
-        this.loc_url = mediaitem.URL;
-
-        //SetInfoText("Processor complete - playing...")
-        showtime.sleep(.1);
-        //SetInfoText("")
-        report=this.loc_url;
-        if (mediaitem.playpath>'')
-            report=report+"\n PlayPath: "+mediaitem.playpath;
-        if (mediaitem.swfplayer>'')
-            report=report+"\n SWFPlayer: "+mediaitem.swfplayer;
-        if (mediaitem.pageurl>'')
-            report=report+"\n PageUrl: "+mediaitem.pageurl;
-        showtime.trace(report);
-        video_link = report;
-
-        return 0
+    # Description: -
+    # Parameters : -
+    # Return     : -
+    /*------------------------------------------------------------------*/             
+    function CServer_is_user_logged_in() {
+        if (this.user_id != '')
+            return true;  
+        return false;
     }
     
-    function urlencode(arr){
-	var strout;
-	var arrVals=new Array();
-	for(var k in arr){
-		if(arr[k]>''){
-			arrVals[arrVals.length]=k+'='+escape(arr[k]);
-		}
-	}
-	return arrVals.join('&');
-}
-                        
     /*----------------------------------------------------------------
 # Description: Retrieve remote information.
 # Parameters : URL, retrieval parameters
@@ -2289,11 +1656,11 @@ function getRemote(url,args){
     }
 
     args=rdefaults;
-    if (url.indexOf(nxserver_URL) != -1){
+    /*if (url.indexOf(nxserver_URL) != -1){
         if (args['cookie']>'')
             args['cookie']=args['cookie']+'; ';
         args['cookie']=args['cookie']+'; nxid='+nxserver.user_id;
-    }
+    }*/
     try{
         var hdr={'User-Agent':args['agent'], 'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'Referer':args['referer'], 'Cookie':args['cookie']};
     }
@@ -2351,7 +1718,7 @@ function getRemote(url,args){
         }
     }
     catch(err){     
-        showtime.trace("Unknown error occurred: "+err);
+        showtime.trace("Unknown error occurred: "+url+', '+err);
         oret = {
             'content': '',
       	    'headers':'',
@@ -2363,14 +1730,23 @@ function getRemote(url,args){
 }
 
 
-function NIPLVars(){
-    this.defaults=NIPLVars_defaults;
-    this.reset=NIPLVars_reset;
+/*####################################################################
+# Description: This class is used to create the variable dictionary
+#              object used by NIPL. Its primary purpose is to allow
+#              querying dictionary elements which don't exist without
+#              crashing Python, although a comple of methods have been
+#              added for initializing and resetting the object.
+#              
+# Parameters : URL=source URL
+# Return     : 0=successful, -1=fail
+####################################################################*/
+function NIPLVars() {
+    this.defaults = NIPLVars_defaults;
+    this.reset = NIPLVars_reset;
     
     this.data=this.defaults();
-}
 
-    function NIPLVars_defaults(){
+    function NIPLVars_defaults() {
         return {
             'htmRaw':'',
             's_url':'',
@@ -2391,86 +1767,686 @@ function NIPLVars(){
             'nookie_expires':'0'
         }
     }
-    
-    function NIPLVars_reset(rtype){
+
+    function NIPLVars_reset(rtype) {
+        if (!rtype)
+            rtype = "";
         var v_defaults=this.defaults();
-        var v_subdefaults=[
-            's_method','s_action','s_agent','s_referer','s_cookie','s_postdata'
-        ];
-        if (rtype=="scrape"){
-            for each (ke in v_subdefaults)
+        if (rtype=="scrape") {
+            var reset_entries = ['s_method','s_action','s_agent','s_referer','s_cookie','s_postdata'];
+            for each (var ke in reset_entries)
                 this.data[ke]=v_defaults[ke];
         }
         else if (rtype=="hard")
             this.data=this.defaults();
-        else{
-            for each (var ke in v_defaults)
+        else {
+            for (ke in v_defaults)
                 this.data[ke]=v_defaults[ke];
         }
     }
-
-
-/*--------------------------------------------------------------------
-# Description: Text viewer
-/*------------------------------------------------------------------*/
-function CServer() {
-    //public member of CServer class.
-    this.user_id = '';
-    
-    this.login = CServer_login;
-    this.is_user_logged_in = CServer_is_user_logged_in;
-    
-    //this.login();
 }
 
-    /*--------------------------------------------------------------------
-    # Description: -
-    # Parameters : -
-    # Return     : -
-    /*------------------------------------------------------------------*/            
-    function CServer_login() {
-        if(this.is_user_logged_in())      
-            return false;    
-        
-        var reason = "Login required";    
-        var do_query = false;    
-        while(1) {      
-            var credentials = plugin.getAuthCredentials("Headweb streaming service",	
-            reason, do_query);          
-            
-            if(!credentials) {	
-                if(!do_query) {	  
-                    do_query = true;	  
-                    continue;	
-                }	
-                return "No credentials";      
-            }      
-            if(credentials.rejected)	
-                return "Rejected by user";      
-            var v = showtime.httpPost("http://navix.turner3d.net/login/", {	
-                username: credentials.username,	password: credentials.password      
-            });            
-            var doc = v.toString();            
-            if(doc == '') {	
-                reason = 'Login failed, try again';	
-                continue;      
-            }      
-            showtime.trace('Logged in to Navi-X as user: ' + credentials.username);
-            this.user_id = v.toString();
-            return false;    
-        }
-    }    
+
+function CURLLoader() {
+    this.urlopen = CURLLoader_urlopen;
+    this.geturl_processor = CURLLoader_geturl_processor;
     
-    /*--------------------------------------------------------------------
-    # Description: -
-    # Parameters : -
-    # Return     : -
-    /*------------------------------------------------------------------*/             
-    function CServer_is_user_logged_in() {
-        if (this.user_id != '')
-            return true;  
-        return false;
+    function CURLLoader_urlopen(URL, mediaitem) {
+        result = 0 //successful
+
+        if (mediaitem.processor != '')
+            result = this.geturl_processor(mediaitem); 
+        else if (URL.indexOf('http://www.youtube.com') != -1) {
+            mediaitem.processor = "http://navix.turner3d.net/proc/youtube";
+            result = this.geturl_processor(mediaitem);
+        }
+        else
+            video_link = unescape(URL);
+        
+        return result;
     }
+    
+    
+    function CURLLoader_geturl_processor(mediaitem) {
+        /*cache_filename=procCacheDir + ProcessorLocalFilename(mediaitem.processor)
+        is_cached=False*/
+        var proc_ori="";
+        var htmRaw="";
+        /*if cache_filename>"" and os.path.exists(cache_filename):
+            # use cached processor if no older than 24 hours
+            if os.path.getmtime(cache_filename) + 60*60*24 > time.mktime(time.gmtime()):
+                try:
+                    htmRaw=open(cache_filename, 'r').read()
+                    is_cached=True
+                    print "Processor: phase 1 - query\n URL: "+mediaitem.URL+"\n Processor (cached): "+mediaitem.processor
+                except IOError:
+                    pass
+        */
+
+        if (htmRaw=="") {
+            showtime.trace("Processor: phase 1 - query\n URL: "+mediaitem.URL+"\n Processor: "+mediaitem.processor);
+            htmRaw=getRemote(mediaitem.processor+'?url='+escape(mediaitem.URL),{'cookie':'version=0.1; platform=showtime'})['content']
+            proc_ori=htmRaw
+        }
+
+        if (htmRaw <= '') {
+            showtime.trace("Processor error: nothing returned from learning phase");
+            return -1
+        }
+        
+        if (htmRaw.slice(0,2)=='v2') {
+            htmRaw=htmRaw.slice(3)
+            var inst=htmRaw
+            htmRaw=''
+            var phase=0
+            var exflag=false
+            var phase1complete=false
+            var verbose=service.processorDebug;
+            var proc_args=''
+            var inst_prev=''
+            var headers={}
+
+            var v=new NIPLVars()
+
+            // command parser
+            var lparse=new RegExp('^([^ =]+)([ =])(.+)')
+
+            // condition parser
+            var ifparse=new RegExp(/^([^<>=!]+)\s*([!<>=]+)\s*(.+)$/);
+
+            // dot property parser
+            var dotvarparse=new RegExp(/^(nookies|s_headers)\.(.+)$/);
+
+            /*nookies=NookiesRead(mediaitem.processor)
+            for ke in nookies:
+                hkey='nookies.'+ke
+                v.data[hkey]=nookies[ke]['value']*/
+
+            while (exflag==false) {
+                var scrape=1
+                phase=phase+1
+                var rep={}
+
+                var if_satisfied=false
+                var if_next=false
+                var if_end=false
+
+                var src_printed=false
+
+                // load defaults into v, leave undefined keys alone
+                v.reset()
+
+                // get instructions if args present
+                if (proc_args>'') {
+                    showtime.trace("Processor: phase "+phase+" learn");
+                    inst=getRemote(mediaitem.processor+'?'+proc_args)['content']
+                    proc_args=''
+                }
+                else if (phase1complete) {
+                    showtime.trace("Processor error: nothing to do");
+                    exflag=true
+                }
+                else
+                    v.data['s_url']=mediaitem.URL
+
+                if (inst==inst_prev) {
+                    showtime.trace("Processor error: endless loop detected");
+                    return -1
+                }
+
+                inst_prev=inst
+                var lines=inst.split("\n");
+                if (lines.length < 1) {
+                    showtime.trace("Processor error: nothing returned from phase "+phase);
+                    return -1
+                }
+                var linenum=0
+                
+                for each (var line in lines) {
+                    linenum=linenum+1
+                    line=line.replace(/^\s*/, '').replace(/\s\s*$/, '');
+
+                    if (verbose>0 && src_printed==false) {
+                        showtime.trace("Processor NIPL source:\n"+inst);
+                        src_printed=true
+                    }
+
+                    if (line>'' && verbose>1) {
+                        var noexec=''
+                        if (if_next || if_end)
+                            noexec=' (skipped)'
+                        var str_report="NIPL line "+linenum+noexec+": "+line
+                        if (verbose>2 && (if_next || if_satisfied || if_end))
+                            str_report=str_report+"\n (IF: satisfied="+if_satisfied+", skip to next="+if_next+", skip to end="+if_end+")"
+                        showtime.trace(str_report);
+                    }
+
+                    // skip comments and blanks
+                    if (line.slice(0,1)=='#' || line.slice(0,2)=='//' || line=='')
+                        continue
+
+                    if (if_end && line!='endif')
+                        continue
+
+                    if (if_next && line.slice(0,5)!='elseif' && line!='else' && line!='endif')
+                        continue
+
+                    if (line=='else') {
+                        if (if_satisfied)
+                            if_end=true
+                        else {
+                            if_next=false
+                            if (verbose>0)
+                                showtime.trace("Proc debug else: executing");
+                        }
+                        continue
+                    }
+
+                    else if (line=='endif') {
+                        if_satisfied=false
+                        if_next=false
+                        if_end=false
+                        continue
+                    }
+
+                    else if (line=='scrape') {
+                        var str_info="Processor:"
+                        if (phase>1)
+                            str_info=str_info+" phase "+phase
+                        str_info=str_info+" scrape"
+                        if (scrape>1)
+                            str_info=str_info+" "+scrape
+                        if (v.data['s_url']=='') {
+                            showtime.trace("Processor error: no scrape URL defined");
+                            return -1
+                        }
+                        scrape=scrape+1
+                        var scrape_args={
+                          'referer': v.data['s_referer'],
+                          'cookie': v.data['s_cookie'],
+                          'method': v.data['s_method'],
+                          'agent': v.data['s_agent'],
+                          'action': v.data['s_action'],
+                          'postdata': v.data['s_postdata'],
+                          'headers': headers
+                        }
+                        showtime.trace("Processor "+v.data['s_method'].toUpperCase()+"."+v.data['s_action']+": "+v.data['s_url']);
+                        if (verbose>0) {
+                            showtime.trace("Proc debug remote args:");
+                            showtime.trace(scrape_args);
+                        }
+                        var remoteObj=getRemote(v.data['s_url'], scrape_args)
+
+
+                        v.data['htmRaw']=remoteObj['content']
+                        v.data['geturl']=remoteObj['geturl']
+                        // backwards-compatibility for pre 3.5.4 (XBMC)
+                        if (v.data['s_action']=='geturl')
+                            v.data['v1']=v.data['geturl']
+                        var str_out="Proc debug headers:"
+                        for (var ke in remoteObj['headers']) {
+                            var hkey='headers.'+ke
+                            str_out=str_out+"\n "+ke+": "+remoteObj['headers'][ke]
+                            v.data[hkey]=remoteObj['headers'][ke]
+                        }
+                        if (verbose>0)
+                            showtime.trace(str_out);
+
+                        /*str_out="Proc debug cookies:"
+                        for ke in remoteObj['cookies']:
+                            hkey='cookies.'+ke
+                            str_out=str_out+"\n "+ke+": "+str(remoteObj['cookies'][ke])
+                            v.data[hkey]=str(remoteObj['cookies'][ke])
+                        if verbose>0:
+                            print str_out*/
+/*
+#                        if v.data['s_action']=='headers':
+#                            headers=remoteObj
+#                            str_out="Proc debug headers:"
+#                            for ke in headers:
+#                                str_out=str_out+"\n "+ke+": "+str(headers[ke])
+#                                v.data[ke]=str(headers[ke])
+#                            if verbose>0:
+#                                print str_out
+#                        elif v.data['s_action']=='geturl':
+#                            v.data['v1']=remoteObj
+#                        else:
+#                            v.data['htmRaw']=remoteObj
+                        */
+showtime.print(v.data['s_action'])
+                        if (v.data['s_action']=='read' && v.data['regex']>'' && v.data['htmRaw']>'') {
+                            // get finished - run regex, populate v(alues) and rep(ort) if regex is defined
+                            v.data['nomatch']=''
+                            rep['nomatch']=''
+                            for (var i=1; i<=11; i++) {
+                                ke='v'+i
+                                v.data[ke]=''
+                                rep[ke]=''
+                            }
+                            var p=new RegExp(v.data['regex'])
+                            match=p.exec(v.data['htmRaw'])
+                            showtime.print(match)
+                            if (match) {
+                                var rerep='Processor scrape:';
+                                for (i=1; i < match.length; i++) {
+                                    val=match[i]
+                                    var key='v'+i
+                                    rerep=rerep+"\n "+key+'='+val
+                                    rep[key]=val
+                                    v.data[key]=val
+                                }
+                                if (verbose>0)
+                                    showtime.trace(rerep);
+                            }
+
+                            else {
+                                if (verbose>0)
+                                    showtime.trace('Processor scrape: no match');
+                                rep['nomatch']=1
+                                v.data['nomatch']=1
+                            }
+                        }
+
+                        // reset scrape params to defaults
+                        v.reset('scrape')
+                    }
+
+                    else if (line=='play') {
+                        if (verbose>=1)
+                            showtime.trace("Proc debug: play");
+                        exflag=true
+                        break
+                    }
+
+                    else if (line=='report') {
+                        rep['phase']=phase
+                        proc_args=escape(rep)
+                        //proc_args=re.sub('v\d+=&','&',proc_args)
+                        proc_args=proc_args.replace('v\d+=&','&')
+                        proc_args=proc_args.replace('nomatch=&','&')
+                        /*proc_args=re.sub('&+','&',proc_args)
+                        proc_args=re.sub('^&','',proc_args)*/
+                        proc_args=proc_args.replace('&+','&')
+                        proc_args=proc_args.replace('^&','')
+                        str_report="Processor report:"
+                        for (ke in rep) {
+                            if (rep[ke]>'')
+                                str_report=str_report+"\n "+ke+": "+rep[ke]
+                        }
+                        showtime.trace(str_report);
+                        break
+                    }
+
+                    else {
+                        // parse
+                        var match=lparse.exec(line)
+                        if (!match) {
+                            showtime.trace("Processor syntax error: "+line);
+                            return -1
+                        }
+                        var subj=match[1]
+                        var arg=match[3]
+                        
+                        if (subj=='if' || subj=='elsif') {
+                            if (if_satisfied)
+                                if_end=true
+                            else {
+
+                                // process if / elseif operators
+                                match=ifparse.exec(arg)
+                                if (match) {
+                                    // process if with operators
+                                    var lkey=match[1]
+                                    var oper=match[2]
+                                    var rraw=match[3]
+                                    if (oper=='=')
+                                        oper='=='
+                                    if (rraw.slice(0,1)=="'")
+                                        var rside=rraw.slice(1)
+                                    else
+                                        rside=v.data[rraw]
+                                    var bool=eval("v.data[lkey]"+oper+"rside")
+                                    var if_report=" test: "+lkey+" "+oper+" "+rraw+"\n  left: "+v.data[lkey]+"\n right: "+rside
+                                }
+
+                                else {
+                                    // process single if argument for >''
+                                    bool=v.data[arg]>''
+                                    if_report=arg
+                                    if (bool)
+                                        if_report=if_report+" > "
+                                    else
+                                        if_report=if_report+" = "
+                                    if_report=if_report+"'': "+v.data[arg]
+                                }
+                            }
+
+                            if (bool) {
+                                if_satisfied=true
+                                if_next=false
+                            }
+                            else
+                                if_next=true
+
+                            if (verbose>0)
+                                showtime.trace("Proc debug "+subj+" => "+bool+":\n "+if_report);
+                            continue
+                        }
+
+                        if (match[2]=='=') {
+                            // assignment operator
+                            if (arg.slice(0,1)=="'") {
+                                var val=arg.slice(1);
+                                var areport="string literal"
+                            }
+                            else {
+                                val=v.data[arg]
+                                areport=arg
+                            }
+
+                            match=dotvarparse.exec(subj);
+                            if (match) {
+                                var dp_type=match[1]
+                                var dp_key=match[2]
+                                var tsubj=dp_key
+                                /*if (dp_type=='nookies') {
+                                    # set nookie
+                                    treport="nookie"
+                                    NookieSet(mediaitem.processor, dp_key, val, v.data['nookie_expires'])
+                                    v.data[subj]=val
+                                }*/
+
+                                if (dp_type=='s_headers') {
+                                    // set scrape header
+                                    var treport="scrape header"
+                                    headers[dp_key]=val
+                                }
+                            }
+
+                            else {
+                                // set variable
+                                treport="variable"
+                                tsubj=subj
+                                v.data[subj]=unescape(val)
+                            }
+
+                            if (verbose>0)
+                                showtime.trace("Proc debug "+treport+": "+tsubj+" set to "+areport+"\n "+val);
+                        }
+
+                        else {
+                            // do command
+                            if (subj=='verbose')
+                                verbose=parseInt(arg)
+
+                            else if (subj=='error') {
+                                showtime.trace("Processor error: "+arg.slice(1));
+                               	return -1
+                            }
+
+                            else if (subj=='report_val') {
+                                match=lparse.exec(arg)
+                                if (!match) {
+                                    showtime.trace("Processor syntax error: "+line);
+                                    return -1
+                                }
+                                ke=match[1]
+                                va=match[3]
+                                if (va.slice(0,1)=="'") {
+                                    rep[ke]=va.slice(1)
+                                    if (verbose>0)
+                                        showtime.trace("Proc debug report value: "+ke+" set to string literal\n "+va.slice(1));
+                                }
+                                else {
+                                    rep[ke]=v.data[va]
+                                    if (verbose>0)
+                                        showtime.trace("Proc debug report value: "+ke+" set to "+va+"\n "+v.data[va]);
+                                }
+                            }
+
+                            else if (subj=='concat') {
+                                match=lparse.exec(arg)
+                                if (!match) {
+                                    showtime.trace("Processor syntax error: "+line);
+                                    return -1
+                                }
+                                ke=match[1]
+                                var va=match[3]
+                                var oldtmp=v.data[ke]
+                                if (va.slice(0,1)=="'")
+                                    v.data[ke]=v.data[ke]+va.slice(1)
+                                else
+                                    v.data[ke]=v.data[ke]+v.data[va]
+                                if (verbose>0)
+                                    showtime.trace("Proc debug concat:\n old="+oldtmp+"\n new="+v.data[ke]);
+                            }
+
+                            else if (subj=='match') {
+                                v.data['nomatch']=''
+                                rep['nomatch']=''
+                                for (i=1; i<=11;i++) {
+                                    ke='v'+i
+                                    v.data[ke]=''
+                                    rep[ke]=''
+                                }
+                                p=new RegExp(v.data['regex'])
+                                try {
+                                    match=p.exec(unescape(v.data[arg]))
+                                }
+                                catch(err) {
+                                    v.data['nomatch']=1
+                                }
+
+                                if (match) {
+                                    rerep='Processor match '+arg+':';
+                                    for (i=1; i < match.length; i++) {
+                                        val=match[i]
+                                        key='v'+i
+                                        rerep=rerep+"\n "+key+'='+val
+                                        v.data[key]=val
+                                    }
+                                    if (verbose>0)
+                                        showtime.trace(rerep);
+                                }
+
+                                else {
+                                    if (verbose>0)
+                                        showtime.trace("Processor match: no match\n regex: "+v.data['regex']+"\n search: "+v.data[arg]);
+                                    v.data['nomatch']=1
+                                }
+                            }
+
+                            else if (subj=='replace') {
+                               // pre-set regex, replace var [']val
+                                match=lparse.exec(arg)
+                                if (!match) {
+                                    showtime.trace("Processor syntax error: "+line);
+                                    return -1
+                                }
+                                ke=match[1]
+                                va=match[3]
+                                if (va.slice(0,1)=="'")
+                                    va=va.slice(1);
+                                else
+                                    va=v.data[va]
+                                oldtmp=v.data[ke]
+                                v.data[ke]=v.data[ke].toString().replace(v.data['regex'], va);
+                                if (verbose>0)
+                                    showtime.trace("Proc debug replace "+ke+":\n old="+oldtmp+"\n new="+v.data[ke]);
+                            }
+
+                            else if (subj=='unescape') {
+                                oldtmp=v.data[arg]
+                                v.data[arg]=escape(v.data[arg])
+                                if (verbose>0)
+                                    showtime.trace("Proc debug unescape:\n old="+oldtmp+"\n new="+v.data[arg]);
+                            }
+
+                            else if (subj=='escape') {
+                                oldtmp=v.data[arg]
+                                v.data[arg]=escape(v.data[arg])
+                                if (verbose>0)
+                                    showtime.trace("Proc debug escape:\n old="+oldtmp+"\n new="+v.data[arg]);
+                            }
+
+                            else if (subj=='debug') {
+                                if (verbose>0) {
+                                    try {
+                                        showtime.trace("Processor debug "+arg+":\n "+v.data[arg]);
+                                    }
+                                    catch (err) {
+                                        showtime.trace("Processor debug "+arg+" - does not exist\n");
+                                    }
+                                }
+                            }
+
+                            else if (subj=='print') {
+                                if (arg.slice(0,1)=="'")
+                                    showtime.trace("Processor print: "+arg.slice(1));
+                                else
+                                    showtime.trace("Processor print "+arg+":\n "+v.data[arg]);
+                            }
+                            
+                            else {
+                                showtime.trace("Processor error: unrecognized method '"+subj+"'");
+                                return -1
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (v.data['agent']>'')
+                v.data['url']=v.data['url']+'?|User-Agent='+v.data['agent']
+            mediaitem.URL=v.data['url']
+            if (v.data['playpath']>'' || v.data['swfplayer']>'') {
+                mediaitem.URL=mediaitem.URL+' tcUrl='+v.data['url']
+                if (v.data['app']>'')
+                    mediaitem.URL=mediaitem.URL+' app='+v.data['app']
+                if (v.data['playpath']>'')
+                    mediaitem.URL=mediaitem.URL+' playpath='+v.data['playpath']
+                if (v.data['swfplayer']>'')
+                    mediaitem.URL=mediaitem.URL+' swfUrl='+v.data['swfplayer']
+                if (v.data['pageurl']>'')
+                    mediaitem.URL=mediaitem.URL+' pageUrl='+v.data['pageurl']
+                if (v.data['swfVfy']>'')
+                    mediaitem.URL=mediaitem.URL+' swfVfy='+v.data['swfVfy']
+            }
+
+            else {
+                mediaitem.swfplayer=v.data['swfplayer']
+                mediaitem.playpath=v.data['playpath']
+                mediaitem.pageurl=v.data['pageurl']
+            }
+
+            mediaitem.processor=''
+
+            /*## cache
+            if v.data['cacheable']>'' and not is_cached:
+                f=open(cache_filename, 'w')
+                f.write(proc_ori)    
+                f.close()
+                print "Processor cached as " + cache_filename*/
+            
+        }
+        
+        else {
+            // proc v1
+            var arr=htmRaw.split("\n")
+            if (!arr) {
+                showtime.trace("Processor error: nothing returned from learning phase");
+                return -1
+            }
+            var URL=arr[0]
+            if (URL.indexOf('error')!=-1) {
+                showtime.trace("Processor: "+URL);
+                return -1
+            }
+            report="Processor: phase 2 - instruct\n URL: "+URL
+            if (arr.length < 2) {
+                this.loc_url = URL
+                showtime.trace("Processor: single-line processor stage 1 result\n playing "+URL);
+                return 0
+            }
+            var filt=arr[1]
+            report=report+"\n filter: "+filt
+            if (arr.length > 2) {
+                ref=arr[2]
+                report=report+"\n referer: "+ref
+            }
+            else
+                var ref=''
+            if (arr.length > 3) {
+                var cookie=arr[3]
+                report=report+"\n cookie: "+cookie
+            }
+            else
+                cookie=''
+
+            showtime.trace(report);
+            var htm=getRemote(URL,{'referer':ref,'cookie':cookie})['content']
+            if (htm == '') {
+                showtime.trace("Processor error: nothing returned from scrape");
+                return -1
+            }
+
+            p=new RegExp(filt)
+            match=p.exec(htm)
+            if (match) {
+                var tgt=mediaitem.processor
+                var sep='?'
+                report='Processor: phase 3 - scrape and report'
+                for (i = 1; i < match.length; i++) {
+                    val=escape(match[i])
+                    tgt=tgt+sep+'v'+i+'='+val
+                    sep='&'
+                    report=report+"\n v"+i+": "+val
+                }
+                showtime.trace(report);
+                var htmRaw2=getRemote(tgt)['content']
+                if (htmRaw2<='') {
+                    showtime.trace("Processor error: could not retrieve data from process phase");
+                    return -1
+                }
+                arr=htmRaw2.split("\n")
+                mediaitem.URL=arr[0]
+
+                if (arr[0].indexOf('error')!=-1) {
+                    showtime.trace("Processor: "+arr[0]);
+                    return -1
+                }
+                if (arr.length > 1) {
+                    mediaitem.URL=mediaitem.URL+' tcUrl='+arr[0]+' swfUrl='+arr[1]
+                    if (arr.length > 2)
+                        mediaitem.URL=mediaitem.URL+' playpath='+arr[2]
+                    if (arr.length > 3)
+                        mediaitem.URL=mediaitem.URL+' pageUrl='+arr[3]
+                }
+                mediaitem.processor=''
+            }
+            else {
+                showtime.trace("Processor error: pattern not found in scraped data");
+                return -1
+            }
+        }
+
+        this.loc_url = unescape(mediaitem.URL)
+        video_link = unescape(mediaitem.URL).replace(/\\/g,'');
+
+        showtime.sleep(.1)
+        var report="Processor final result:\n URL: "+this.loc_url
+        if (mediaitem.playpath>'')
+            report=report+"\n PlayPath: "+mediaitem.playpath
+        if (mediaitem.swfplayer>'')
+            report=report+"\n SWFPlayer: "+mediaitem.swfplayer
+        if (mediaitem.pageurl>'')
+            report=report+"\n PageUrl: "+mediaitem.pageurl
+        showtime.trace(report);
+
+        return 0
+    }
+}
+
     
 plugin.addURI(PREFIX + ":start", startPage);
 })(this);

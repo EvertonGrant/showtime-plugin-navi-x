@@ -10,32 +10,6 @@ Now the link:
 https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=EU3RR79YMKRXU
 
 
-## Processors currently tested and working (if it fails is because the video was removed):
-- ABC
-- BBC
-- CBS
-- Crackle TV
-- DivxStage
-- FilmTrailer
-- Fragg.me
-- G4TV
-- Gamespot
-- GameKings
-- Google Video
-- Megavideo
-- MovReel
-- Movshare (some don't work)
-- NBC
-- NFL
-- PBS Kids
-- Syfy
-- Youtube Shows
-- Videofriender
-
-### Not working:
-- Putlocker
-
-
 ## Features currently supported:
 - PLX support
 - XML support
