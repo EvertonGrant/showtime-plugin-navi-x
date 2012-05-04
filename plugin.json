@@ -1,11 +1,11 @@
-   {
-	"type": "javascript",
-	"id": "navi-x",
-	"file": "navi-x.js",
-	"showtimeVersion": "3.1",
-        "version": "0.1",
-        "author": "Fábio Canada",
-        "title": "Navi-X",
-        "icon": "logo.png",
-        "synopsis": "Navi-X"
+{
+    "type": "javascript",
+    "id": "navi-x",
+    "file": "navi-x.js",
+    "showtimeVersion": "3.5.212",
+    "version": "0.9",
+    "author": "Fabio Ferreira (facanferff)",
+    "title": "Navi-X",
+    "icon": "logo.png",
+    "synopsis": "Navi-X is a content aggregator app that provides access to all kinds of multimedia content, listed on a public directory of user contributed listings or playlists for playing on your TV or PC!"
 }

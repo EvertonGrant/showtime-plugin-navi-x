@@ -1,11 +1,7 @@
 /**
- * Navi-X plugin for showtime version 0.1 by facanferff (Fábio Canada / facanferff@hotmail.com)
+ * Navi-X plugin for showtime by facanferff (Fábio Canada / facanferff@hotmail.com)
  *
  *  Copyright (C) 2011 facanferff (Fábio Canada / facanferff@hotmail.com)
- *
- * 	ChangeLog:
- *	0.1:
- * 	- Started work
  * 
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -18,402 +14,1338 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.showtime.
  */
 
 
 (function(plugin) {
 
-  var PREFIX = "navi-x";
-  
-  var home_URL = 'http://www.navi-x.org/playlists/home.plx';
-  var home_URL_mirror='http://navi-x.googlecode.com/svn/trunk/Playlists/home.plx';
-  var page_size = 200 //display maximum 200 entries on one page
-  var plxVersion = '8';
-  
-  var background_image1 = plugin.path + 'resources/background1.jpg';
-  
-  var result = -1;
-  
-  var video_link = '';
-  
-  var nxserver;
-  
-//settings 
+    var PREFIX = "navi-x";
+    var plxVersion = 8;
 
-  var service = plugin.createService("Navi-X", "navi-x:start", "tv", true,
+    var downloader = new Downloader();
+    var store = new Store();
+    var tmdb = new TMDB();
+    var server;
+    var playlist;
+
+    var background_image1 = plugin.path + 'resources/background1.jpg';
+  
+    var home_URL = 'http://navi-x.googlecode.com/svn/trunk/Playlists/home.plx';
+
+    // stores
+    var report_processors = plugin.createStore('report_processors', true);
+  
+    var service = plugin.createService("Navi-X", "navi-x:start", "video", true,
 			   plugin.path + "logo.png");
-                           
-  var settings = plugin.createSettings("Navi-X",
+						   
+    var settings = plugin.createSettings("Navi-X",
 					  plugin.path + "logo.png",
 					 "Navi-X: Online Media Resources");
 
-  settings.createInfo("info",
-			     plugin.path + "logo.png",
-			     "Navi-X. Learn more on http://website.navi-x.org/ \n" + 
-				 "Plugin developed by facanferff (Fábio Canada) \n");
+    settings.createInfo("info",
+				 plugin.path + "logo.png",
+				 "Navi-X. Create your playlists on http://www.navixtreme.com/ \n" + 
+				 "Plugin developed by facanferff \n");
 
-  settings.createBool("backgroundEnabled", "Background", false, function(v) {
-    service.backgroundEnabled = v;
-  });
+    settings.createDivider('Browser Settings');
 
-  settings.createInt("processorDebug", "Processor Debugging", 0, 0, 4, 1, '', function(v) {
-    service.processorDebug = v;
-  });
+    settings.createBool("backgroundEnabled", "Background", false, function(v) { service.backgroundEnabled = v; });
+
+    settings.createDivider('User Settings (only functional if logged in)');
+
+    settings.createBool("login", "Enable Log In Popup", true, function(v) { service.login = v; });
+    settings.createBool("adult", "Adult Content", false, function(v) { service.adult = v; });
+    settings.createBool("playlistsVisibility", "New Playlists Private", true, function(v){ service.playlistsVisibility = v; });
+
+    settings.createDivider('Video Settings');
+
+    settings.createBool("advanced", "Enable Advanced Mode for Videos (Video information, User Actions)", false, function(v) { service.advanced = v; });
+    settings.createBool("tmdb", "TMDB Scraper", false, function(v) { service.tmdb = v; });
   
-function startPage(page) {
-    /*Create playlist object contains the parsed playlist data. The this.list control displays
-    the content of this list*/
-    this.playlist = new CPlayList();
-    
-    //Next a number of class private variables
-    this.home=home_URL;
-    this.pl_focus = this.playlist;
-    this.listview = 'default';
-    
-    nxserver = new CServer();
-    
-    page.type = "directory";
-    page.contents = "items";
-    
-    result = -1;
-    
-    if (result)
-    {
-        //Load the Navi-X home page
-        result = ParsePlaylist(page, this.home, new CMediaItem(), 0, true, "CACHING");
-        if (result) //failed, try the mirror home page
-            result = ParsePlaylist(page, home_URL_mirror, new CMediaItem(), 0, true, "CACHING"); //mirror site 
-    }
-    
-    page.appendItem(PREFIX+':playlist:'+'playlist:'+escape('http://navix.turner3d.net/playlist/53864/debugging_and_testing_playlist.plx'),
-        'directory', {title:'Test - Debug'})
-        
-    page.loading = false;
-  }
-
-plugin.addURI(PREFIX + ":video:(.*):(.*):(.*)", function(page, title, url, processor) {
-    result = -1;
-    
-    var mediaitem = new CMediaItem();
-    mediaitem.URL = unescape(url);
-    mediaitem.processor = unescape(processor);
-    
-    var urlloader = new CURLLoader();
-    result = urlloader.urlopen(mediaitem.URL, mediaitem);
-        
-    showtime.trace("Get original video link result: " + result);
-        if (result) {
-            page.error('There was one problem in the process, please contact the developer with the following information: \n'+
-                'URL: '+mediaitem.URL + '\nProcessor: '+mediaitem.processor);
+    function startPage(page) {
+        var v = 3 * 10000000 +  5 * 100000 + 212;
+        if (showtime.currentVersionInt < v) {
+            page.error('Your version of Showtime is outdated for this plugin. Look at https://www.lonelycoder.com/showtime/download for a new build of it.');
             return;
         }
+
+        page.type = "directory";
+        page.contents = "items";
+
+        server = new Server();
+
+        if (service.login == '1')
+            server.login();
+
+        playlist = new Playlist(page, home_URL, new MediaItem());
+        var result = playlist.loadPlaylist(home_URL);
+
+        page.loading = false;
+    }
+
+    plugin.addURI(PREFIX + ":playlist:(.*):(.*)", function(page, type, url) {
+        var result = -1;
+	
+        page.type = "directory";
+        page.contents = "items";
+	
+        var mediaitem = new MediaItem();
+        mediaitem.type = unescape(type);
+        mediaitem.URL = unescape(url);
+
+        playlist = new Playlist(page, mediaitem.URL, mediaitem);
+	
+        page.loading = false;
+
+        if (mediaitem.type.slice(0,6) == 'search') {
+            result = playlist.parseSearch();
+        }
+        else
+            result = playlist.loadPlaylist(mediaitem.URL);
+
+        showtime.trace(result.message);
+        if (result.error)
+        {
+            page.error(result.errorMsg);
+        }
+    });
+
+    plugin.addURI(PREFIX + ":video:(.*):(.*):(.*)", function(page, title, url, proc) {
+        var video = unescape(url);
+    
+        for (var i = 0; i < playlist.list.length; i++) {
+            var item = playlist.list[i];
+            if (item.URL == video) {
+                var id = i;
+            }
+        }
+
+        if (proc != 'undefined' && proc != '') {
+            var mediaitem = new MediaItem();
+            mediaitem.URL = unescape(url);
+            mediaitem.processor = unescape(proc);
+
+            var processor = new Processor(mediaitem);
+
+            processor.NIPL.vars['s_url'] = mediaitem.URL;
+            var result = processor.getUrl(page, mediaitem);
+        }
+
+        page.loading = false;
+
+        if (proc != 'undefined' && proc != '' && result.error) {
+            showtime.trace(result.message);
+            page.error(result.message);
+        }
+        else {
+            if (server.authenticated())
+                server.addToPlaylist("History", playlist.list[id]);
+
+            if (proc != 'undefined' && proc != '') {
+                showtime.trace(result.message);
+                video = result.video;
+            }
+
+            var url_end = video.indexOf('|');
+            if (url_end != -1)
+                video = video.slice(0, url_end);
+
+            showtime.trace('Video Playback: Reading ' + video);
+
+            page.source = "videoparams:" + showtime.JSONEncode({      
+                title: unescape(title),     
+                sources: [
+	        {
+	            url: video
+	        }]    
+            });    
+            page.type = "video";
+        }
+    });
+
+    plugin.addURI(PREFIX + ":videoscreen:([0-9]*)", function (page, id) {
+        page.type = "item";
+
+        page.metadata.logo = playlist.list[id].thumb;
+        page.metadata.icon = playlist.list[id].thumb;
+        page.metadata.title = playlist.list[id].name;
+
+        var alternative = false;
+
+        if (service.tmdb == '1') {
+            var item = tmdb.getMovie(playlist.list[id].name);
+
+            if (item) {
+                page.metadata.title = item.title;
+                var data = showtime.JSONDecode(showtime.httpGet("http://api.themoviedb.org/3/configuration", {
+                    'api_key': tmdb.key
+                }, {
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+                }).toString());
+                var base_url = data.images.base_url;
+                var size = "original";
+
+                page.metadata.icon = base_url + size + item.poster_path;
+                page.metadata.title = item.title;
+                page.metadata.logo = base_url + size + item.poster_path;
+                if (service.backgroundEnabled == "1")
+                    page.metadata.background = base_url + size + item.backdrop_path;
+
+                var genres = "";
+                for (var i in item.genres) {
+                    var entry = item.genres[i];
+                    genres += entry.name
+                    if (i < item.genres.length - 1)
+                        genres += ', ';
+                }
+
+                page.appendPassiveItem("label", new showtime.RichText(item.release_date), {title: "Release Date"});
+                page.appendPassiveItem("label", new showtime.RichText(genres), {title: "Genres"});
+                page.appendPassiveItem("label", new showtime.RichText(showtime.durationToString(parseInt(item.runtime * 60))), {title: "Duration"});
+                page.appendPassiveItem("label", new showtime.RichText(item.tagline), {title: "Tagline"});
+                page.appendPassiveItem("label", new showtime.RichText('$' + item.budget), {title: "Budget"});
+                page.appendPassiveItem("label", new showtime.RichText('$' + item.revenue), {title: "Revenue"});
+
+                page.appendPassiveItem("rating", parseFloat((item.vote_average / 2) / 5));
+    
+                page.appendPassiveItem("divider");  
         
-    page.source = "videoparams:" + showtime.JSONEncode({      
-        title: unescape(title),     
-        sources: [
-        {	
-            url: video_link      
-        }]    
-    });    
-    page.type = "video";
-});
+                page.appendPassiveItem("bodytext", new showtime.RichText(item.overview));
+            }
+            else alternative = true;
+        }
+        if (service.tmdb != '1' || alternative) {
+            page.appendPassiveItem("label", new showtime.RichText(playlist.list[id].URL),{title: "URL"});
+            page.appendPassiveItem("label", new showtime.RichText(playlist.list[id].processor), {title: "Processor"});
 
-plugin.addURI(PREFIX + ":text:(.*):(.*)", function(page, title, url) {
-    page.type = "item";
+            if (playlist.list[id].rating)
+                page.appendPassiveItem("rating", parseFloat(playlist.list[id].rating / 5));
     
-    var content = showtime.httpGet(unescape(url)).toString();
-    page.appendPassiveItem("bodytext", new showtime.RichText(content));
+            page.appendPassiveItem("divider");  
+        
+            page.appendPassiveItem("bodytext", new showtime.RichText(playlist.list[id].description));
+        }
     
-    page.metadata.title = unescape(title)
-    
-    page.loading = false;
-});
+        page.appendAction("navopen", PREFIX + ':video:' + escape(playlist.list[id].name) + ":" +
+        escape(playlist.list[id].URL) + ":" + escape(playlist.list[id].processor), true, {
+            title:'Watch Now'});
+        
+        if (server.authenticated()) {
+            page.appendAction("pageevent", "addToPlaylist", true, {title:'Add to Playlist'});
 
-plugin.addURI(PREFIX + ":playlist:(.*):(.*)", function(page, type, url) {
-    result = -1;
-    
-    page.type = "directory";
-    page.contents = "items";
-    
-    this.playlist = new CPlayList();
-    this.pl_focus = this.playlist;
-    
-    var mediaitem = new CMediaItem();
-    mediaitem.type = type;
-    mediaitem.URL = unescape(url)
-    
-    page.loading = false;
-    
-    if (type.slice(0,6) == 'search') {
-        result = PlaylistSearch(page,mediaitem)
-        if (result)
-            return;
-    }
-    else
-        result = ParsePlaylist(page, unescape(url), mediaitem, 0, true, "CACHING");
-    showtime.trace("Parsing playlist operation result: " + result);
-    if (result)
-    {
-        page.error('Failed to parse the playlist, please contact the developer with the following information: \n'+
-                'Type: '+mediaitem.type + '\nURL: '+unescape(url));
-        return;
-    }
-});
-
-
-        /*--------------------------------------------------------------------
-        # Description: Handle selection of playlist search item (e.g. Youtube)
-        # Parameters : item=mediaitem
-        #              append(optional)=true is playlist must be added to 
-        #              history list;
-        # Return     : -
-        /*------------------------------------------------------------------*/
-        function PlaylistSearch(page, item) {
-            var search = showtime.textDialog('Search: '+item.name, true, false)
+            if (!server.existInPlaylist(playlist.list[id], 'Favorites'))
+                page.appendAction("pageevent", "addFavorite", true, {title:'Add Favorite'});
+            else
+                page.appendAction("pageevent", "removeFavorite", true, {title:'Remove Favorite'});
             
-            if (search.rejected)
-                return -1 //canceled
+            page.onEvent('addToPlaylist', function() {
+                var titleInput = showtime.textDialog('Title of Playlist: ', true, true);
+
+                if (search.rejected) {
+                    return;
+                }
+                try {
+                    var title = titleInput.input;
+                    if (title.length == 0) {
+                        return;
+                    }
+
+                    if (server.addToPlaylist(title, playlist.list[id]))
+                        showtime.message('Entry was added syccesfully to the playlist ' + title + '.', true, false);
+                    else
+                        showtime.message('There was one error while trying to add this entry to the playlist', true, false);
+                }
+                catch(ex) { }
+            });
+
+            page.onEvent('addFavorite', function() {
+                if (!server.existInPlaylist(playlist.list[id], 'Favorites')) {
+                    if (server.addToPlaylist('Favorites', playlist.list[id]))
+                        showtime.message('Navixtreme: Entry was added syccesfully to the playlist Favorites.', true, false);
+                    else
+                        showtime.message('Navixtreme: There was one error while trying to add this entry to the playlist', true, false);
+                }
+                else showtime.message('Navixtreme: Entry exists already in the target playlist.', true, false);
+            });
+
+            page.onEvent('removeFavorite', function() {
+                if (server.removeFromPlaylist('Favorites', playlist.list[id]))
+                    showtime.message('Entry was removed syccesfully to the playlist Favorites.', true, false);
+                else
+                    showtime.message('There was one error while trying to remove this entry to the playlist', true, false);
+            });
+        }
+	
+        page.loading = false;
+    });
+
+    plugin.addURI(PREFIX + ":playlist:screen", function (page) {
+        page.type = "item";
+
+        if (service.backgroundEnabled == "1")
+            page.metadata.background = playlist.background;
+
+        page.metadata.logo = playlist.thumb;
+        page.metadata.icon = playlist.thumb;
+        page.metadata.title = playlist.title;
+
+        page.appendPassiveItem("label", new showtime.RichText(playlist.title),{title: "Name"});
+        page.appendPassiveItem("label", new showtime.RichText(playlist.type), {title: "Type"});
+        if (playlist.date)
+            page.appendPassiveItem("label", new showtime.RichText(playlist.date), {title: "Date"});
+
+        if (playlist.rating && playlist.rating != '-1.00')
+            page.appendPassiveItem("rating", parseFloat(playlist.rating) / 5);
+    
+        if (playlist.bodytext) {
+            page.appendPassiveItem("divider");  
+            page.appendPassiveItem("bodytext", new showtime.RichText(item.overview));
+        }
+    
+        if (server.authenticated()) {
+            playlist.URL = playlist.path;
+
+            if (!server.existInPlaylist(playlist, 'Favorites'))
+                page.appendAction("pageevent", "addFavorite", true, {title:'Add Favorite'});
+            else
+                page.appendAction("pageevent", "removeFavorite", true, {title:'Remove Favorite'});
+        
+            page.onEvent('addFavorite', function() {
+                if (!server.existInPlaylist(playlist, 'Favorites')) {
+                    if (server.addToPlaylist('Favorites', playlist))
+                        showtime.message('Navixtreme: Entry was added syccesfully to the playlist Favorites.', true, false);
+                    else
+                        showtime.message('Navixtreme: There was one error while trying to add this entry to the playlist', true, false);
+                }
+                else showtime.message('Navixtreme: Entry exists already in the target playlist.', true, false);
+            });
+
+            page.onEvent('removeFavorite', function() {
+                if (server.removeFromPlaylist('Favorites', playlist))
+                    showtime.message('Navixtreme: Entry was removed syccesfully to the playlist Favorites.', true, false);
+                else
+                    showtime.message('Navixtreme: There was one error while trying to remove this entry to the playlist', true, false);
+            });
+        }
+	
+        page.loading = false;
+    });
+
+    function Playlist(page, filename, mediaitem) {
+        //defaults
+        this.version = '-1';
+
+        this.page = page;
+        this.mediaitem = mediaitem;
+
+        this.path = filename;
+
+        this.list = [];
+
+        // Render page or not
+        this.render = true;
+
+        this.background = mediaitem.background; 
+        this.logo = 'none';
+        if (this.mediaitem.thumb != 'default')
+            this.logo = this.mediaitem.thumb;
+        //
+        this.title = '';
+        this.type = 'playlist';
+        this.description = '';
+        this.view = this.mediaitem.view;
+        this.processor = this.mediaitem.processor;
+        this.playmode = 'default';
+
+        this.start_index = 0;
+
+        // TODO: Pagination
+        //this.start_index = 0;
+
+        this.parseSearch = function() {
+            var search = showtime.textDialog('Search: ' + this.mediaitem.name, true, false);
+
+            var result = {};
+			
+            if (search.rejected) {
+                result.error = true;
+                result.errorMsg = 'User cancelled search.';
+                return result;
+            }
             var searchstring = search.input;
-            if (searchstring.length == 0)
-                return -1 //empty string search, cancel
-            //
+            if (searchstring.length == 0) {
+                result.error = true;
+                result.errorMsg = 'Empty search string.';
+                return result;
+            }
+    
             //get the search type:
-            var index=item.type.indexOf(":")
+            var index = this.mediaitem.type.indexOf(":");
             var search_type;
             if (index != -1)
-                search_type = item.type.slice(index+1)
+                search_type = item.type.slice(index+1);
             else
-                search_type = ''
-        
-            var fn
-            var mediaitem
-        
+                search_type = '';
+		
+            var fn;
+            var mediaitem;
+		
             //youtube search
-            if (item.type == 'search_youtube') {
-                fn = searchstring.replace(/ /g,'+')
+            if (this.mediaitem.type == 'search_youtube') {
+                fn = searchstring.replace(/ /g,'+');
+                var URL = '';
                 if (item.URL != '')
-                    URL = item.URL
+                    URL = this.mediaitem.URL;
                 else
-                    URL = 'http://gdata.youtube.com/feeds/base/videos?max-results=50&alt=rss&q='
-                URL = URL + fn
+                    URL = 'http://gdata.youtube.com/feeds/base/videos?max-results=50&alt=rss&q=';
+                URL = URL + fn;
                 // Use for now Published sort by default
-                URL = URL + '&orderby=published'
-               
-                mediaitem=new CMediaItem()
-                mediaitem.URL = URL
-                mediaitem.type = 'rss:video'
-                mediaitem.name = 'search results: ' + searchstring
-                mediaitem.player = item.player
-                mediaitem.processor = item.processor
-
-                this.pl_focus = this.playlist
-                result = ParsePlaylist(page, mediaitem.URL, mediaitem, 0, true, 'CACHING')
+                URL = URL + '&orderby=published';
+			   
+                this.mediaitem=new MediaItem();
+                this.mediaitem.URL = URL;
+                this.mediaitem.type = 'rss:video';
+                this.mediaitem.name = 'search results: ' + searchstring;
+                this.mediaitem.processor = this.mediaitem.processor;
+                this.loadPlaylist(this.mediaitem.URL);
             }
-        
             else { //generic search
-                    fn = searchstring.replace(/ /g,'+')
-                    URL = item.URL
-                    URL = URL + fn
-//@todo:add processor support to change the URL.                       
-                    mediaitem=new CMediaItem()
-                    mediaitem.URL = URL
-                    if (search_type != '')
-                        mediaitem.type = search_type
-                    else //default
-                        mediaitem.type = 'playlist'
-                    
-                    mediaitem.name = 'search results: ' + searchstring
-                    mediaitem.player = item.player
-                    mediaitem.processor = item.processor
-//@todo
-                    this.pl_focus = this.playlist
-                    result = ParsePlaylist(page, mediaitem.URL, mediaitem, 0, true, 'CACHING')
+                fn = searchstring.replace(/ /g,'+');   
+                var URL = this.mediaitem.URL;
+                this.mediaitem=new MediaItem();
+                this.mediaitem.URL = URL + fn;
+                if (search_type != '')
+                    this.mediaitem.type = search_type;
+                else //default
+                    this.mediaitem.type = 'playlist';
+					
+                this.mediaitem.name = 'search results: ' + searchstring;
+                this.mediaitem.processor = this.mediaitem.processor;
+                this.loadPlaylist(this.mediaitem.URL);
             }
+
+            // Should not get this far
+            return -1;
+        }
+
+        this.parsePLX = function() {
+            var result = {};
+
+            var content = downloader.getRemote(this.path);
+
+            if (content == "") {
+                result.error = true;
+                result.errorMsg = content.error;
+                return result;
+            }
+
+            content = content.response.split(/\r?\n/);
+
+            //parse playlist entries 
+            var counter = 0;
+            var state = 0;
+            var tmp='';
+            var previous_state = 0;
+		
+            var key = '';
+            var value = '';
+            var index = -1;
+
+            for (var i in content) {
+                var m = content[i];
+                if (state == 2) //parsing description field
+                {
+                    index = m.indexOf('/description');
+                    if (index != -1)
+                    {
+                        this.description = this.description + "\n" + m.slice(0, index);
+                        state = 0;
+                    }
+                    else
+                        this.description = this.description + "\n" + m;
+                }
+                else if (state == 3) //parsing description field
+                {
+                    index = m.indexOf('/description');
+                    if (index != -1)
+                    {
+                        tmp.description = tmp.description + "\n" + m.slice(0, index);
+                        state = 1;
+                    }
+                    else
+                        tmp.description = tmp.description + "\n" + m;
+                }
+                else if (state == 4) //multiline comment
+                {
+                    if (m.slice(0,3) == '"""')
+                        state = previous_state;
+                }
+                else if (m && m[0] != '//')
+                {
+                    if (m.slice(0,3) == '"""')
+                    {
+                        previous_state = state;
+                        state = 4; //muliline comment state
+                        continue; //continue with next line
+                    }
+                    if (m[0] == '#') {
+                        var id = parseInt(m.slice(2));
+
+                        if (id) {
+                            if (state == 1)
+                                this.list.push(tmp);
+                            else //state=0                        
+                                this.list.splice(0, this.list.length);
+
+                            tmp = new MediaItem(); //create new item
+                            tmp.id = id;
+
+                            counter = counter + 1;
+                            state = 1;
+                        }
+                    }
+
+                    index = m.indexOf('=');
+                    if (index != -1)
+                    {
+                        key = m.slice(0, index);
+                        value = m.slice(index+1, m.length);
+                        if (key == 'version' && state == 0)
+                        {
+                            this.version = value;
+                            //check the playlist version
+                            if (parseInt(this.version) > parseInt(plxVersion))
+                                return -1 //invalid
+                            else
+                                this.list.splice(0, this.list.length);
+                        }
+                        else if (key == 'background' && state == 0)
+                            this.background=value;
+                        else if (key == 'logo' && state == 0)
+                            this.logo=value;
+                            //         
+                        else if (key == 'title' && state == 0)
+                            this.title=value;
+                        else if (key == 'description' && state == 0)
+                        {
+                            index = value.indexOf('/description');
+                            if (index != -1)
+                                this.description=value.slice(0,index);
+                            else
+                            {
+                                this.description=value;
+                                state = 2; //description on more lines
+                            }
+                        }
+                        else if (key == 'playmode' && state == 0)
+                            this.playmode=value;
+                        else if (key == 'view' && state == 0)
+                            this.view=value;                           
+                        else if (key == 'type')
+                        {
+                            if (!tmp.id) {
+                                if (state == 1)
+                                    this.list.push(tmp);
+                                else //state=0                        
+                                    this.list.splice(0, this.list.length);
+
+                                tmp = new MediaItem(); //create new item
+
+                                counter = counter + 1;
+                                state = 1;
+                            }
+
+                            tmp.type = value;
+                            if (tmp.type == 'video' || tmp.type == 'audio')
+                            {
+                                tmp.processor = this.processor;
+                            }
+                        }
+                        else if (key == 'version' && state == 1)
+                            tmp.version=value;
+                        else if (key == 'name')
+                            tmp.name=value;
+                        else if (key == 'date')
+                            tmp.date=value;  
+                        else if (key == 'thumb')
+                            tmp.thumb=value;
+                        else if (key == 'icon')
+                            tmp.icon=value;    
+                        else if (key == 'URL')
+                            tmp.URL=value;
+                            /*else if (key == 'DLloc')
+                        tmp.DLloc=value;*/
+                        else if (key == 'background')
+                            tmp.background=value;
+                        else if (key == 'rating')
+                            tmp.rating=value;
+                        else if (key == 'infotag')
+                            tmp.infotag=value;                        
+                        else if (key == 'view')
+                            tmp.view=value;  
+                        else if (key == 'processor')
+                            tmp.processor=value;
+                        else if (key == 'playpath')
+                            tmp.playpath=value;
+                        else if (key == 'swfplayer')
+                            tmp.swfplayer=value;    
+                        else if (key == 'pageurl')
+                            tmp.pageurl=value;   
+                        else if (key == 'description')
+                        {
+                            //this.description = ' ' //this will make the description field visible
+                            index = value.indexOf('/description');
+                            if (index != -1)
+                                tmp.description=value.slice(0, index);
+                            else
+                            {
+                                tmp.description=value;
+                                state = 3; //description on more lines 
+                            }
+                        }
+                    }
+                }
+            }
+		
+            if ((state == 1) || (previous_state == 1))
+                this.list.push(tmp);
+
+            showtime.trace('Playlist: Parsed ' + this.list.length + ' items');
+		
+            result.error = false;
+            return result;
+        };
+
+        this.parseRSS = function() {
+            var result = {};
+
+            if (this.path.slice(0,6) == 'rss://')      
+                this.path = this.path.replace('rss:', 'http:')
+
+            var content = downloader.getRemote(this.path).response;
+
+            if (content == "") {
+                result.error = true;
+                result.errorMsg = "Input playlist is empty.";
+                return result;
+            }
+
+            content = content.split('<item');
+
+            //parse playlist entries 
+            var counter = 0;
+            var state = 0;
+            var tmp='';
+            var previous_state = 0;
+		
+            var key = '';
+            var value = '';
+            var index = -1;
+
+            //set the default type
+            var index = mediaitem.type.indexOf(":")
+            var type_default;
+            if (index != -1)
+                type_default = mediaitem.type.slice(index+1);
+            else
+                type_default = '';
+		
+            var counter = 0;
+    
+            //parse playlist entries 
+            for (var i in content) {
+                var m = content[i];
+                if (counter == 0) {
+                    //fill the title
+                    index = m.indexOf('<title>');
+                    if (index != -1) {
+                        var index2 = m.indexOf('</title>');
+                        if (index != -1) {
+                            var value = m.slice(index+7,index2);
+                            this.title = value;
+                        }
+                    }
+
+                    index = m.indexOf('<description>');
+                    if (index != -1) {
+                        index2 = m.indexOf('</description>');
+                        if (index2 != -1) {
+                            value = m.slice(index+13,index2);
+                            this.description = value;
+                            var index3 = this.description.indexOf('<![CDATA[');
+                            if (index3 != -1)
+                                this.description = this.description.slice(9,this.description-3);
+                        }
+                    }
+				
+                    //fill the logo
+                    index = m.indexOf('<image>');
+                    if (index != -1) {
+                        index2 = m.indexOf('</image>');
+                        if (index != -1) {
+                            index3 = m.indexOf('<url>', index, index2);
+                            if (index != -1) {
+                                var index4 = m.indexOf('</url>', index, index2);
+                                if (index != -1)
+                                    value = m.slice(index3+5,index4);
+                                this.logo = value;
+                            }
+                        }
+                    }
+                    else { //try if itunes image
+                        index = m.indexOf('<itunes:image href="');
+                        if (index != -1) {
+                            index2 = m.indexOf('"', index+20);
+                            if (index != -1) {
+                                value = m.slice(index+20,index2);
+                                this.logo = value;
+                            }
+                        }
+                    }
+	   
+                    counter++;
+                }
+                else {
+                    var tmp = new MediaItem(); //create new item
+                    tmp.processor = this.processor;
+
+                    //get the publication date.
+                    /*index = m.indexOf('<pubDate')
+				if (index != -1) {
+					index2 = m.indexOf('>', index)
+					if (index2 != -1) {
+						index3 = m.indexOf('</pubDate')
+						if (index3 != -1) {
+							index4 = m.indexOf(':', index2, index3)
+							if (index4 != -1) {
+								value = m.slice(index2+1,index4-2)
+								value = value.replace('\n',"") 
+								tmp.date = value
+							}
+						}
+					}
+				}*/
+
+                    //get the title.
+                    index = m.indexOf('<title');
+                    if (index != -1) {
+                        index2 = m.indexOf('>', index);
+                        if (index2 != -1) {
+                            index3 = m.indexOf('</title>');
+                            if (index3 != -1) {
+                                index4 = m.indexOf('![CDATA[', index2, index3);
+                                if (index4 != -1)
+                                    value = m.slice(index2+10,index3-3);
+                                else
+                                    value = m.slice(index2+1,index3);
+                                value = value.replace('\n'," '");                         
+                                tmp.name = tmp.name + value;
+                            }
+                        }
+                    }
+											 
+                    //get the description.
+                    var index1 = m.indexOf('<content:encoded>');
+                    index = m.indexOf('<description>');
+                    if (index1 != -1) {
+                        index2 = m.indexOf('</content:encoded>');
+                        if (index2 != -1) {
+                            value = m.slice(index1+17,index2);
+                            //value = value.replace('&#39;',"\'");   
+                            tmp.description = value;
+                            index3 = tmp.description.indexOf('<![CDATA[');
+                            if (index3 != -1)
+                                tmp.description = tmp.description.slice(9,-3);
+                        }
+                    }
+                    else if (index != -1) {
+                        index2 = m.indexOf('</description>');
+                        if (index2 != -1) {
+                            value = m.slice(index+13,index2);
+                            //value = value.replace('&#39;',"\'"); 
+                            tmp.description = value;
+                            index3 = tmp.description.indexOf('<![CDATA[');
+                            if (index3 != -1)
+                                tmp.description = tmp.description.slice(9,-3);
+                        }
+                    }
+
+                    //get the thumb
+                    index = m.indexOf('<media:thumbnail');
+                    if (index != -1) {
+                        index2 = m.indexOf('url=', index+16);
+                        if (index2 != -1) {
+                            index3 = m.indexOf('"', index2+5);
+                            if (index3 != -1) {
+                                value = m.slice(index2+5,index3);
+                                tmp.thumb = value;
+                            }
+                        }
+                    }
+							
+                    if (tmp.thumb == 'default') {
+                        //no thumb image found, therefore grab any jpg image in the item
+                        index = m.indexOf('.jpg');
+                        if (index != -1) {
+                            index2 = m.lastIndexOf('http', 0, index);
+                            if (index2 != -1) {
+                                value = m.slice(index2,index+4);
+                                tmp.thumb = value;
+                            }
+                        }
+                    }
+				
+                    //get the enclosed content.
+                    index = m.indexOf('enclosure');
+                    index1 = m.indexOf ('<media:content');
+                    if (((index != -1) || (index1 != -1))) { // and (tmp.processor==''):
+                        //enclosure is first choice. If no enclosure then use media:content
+                        if ((index == -1) && (index1 != -1))
+                            index = index1;
+                        index2 = m.indexOf('url="',index); //get the URL attribute
+                        if (index2 != -1)
+                            index3 = m.indexOf('"', index2+5);
+                        else {
+                            index2 = m.indexOf("url='",index);
+                            if (index2 != -1)
+                                index3 = m.indexOf("'", index2+5);
+                        }
+                        if ((index2 != -1) && (index3 != -1))
+                            value = m.slice(index2+5,index3);
+                        tmp.URL = value;
+					
+                        //get the media type
+                        if (type_default != '')
+                            tmp.type = type_default;
+
+                        if (tmp.type == 'unknown') {  
+                            index2 = m.indexOf('type="',index); //get the type attribute
+                            if (index2 != -1) {
+                                index3 = m.indexOf('"', index2+6);
+                                if (index3 != -1) {
+                                    var type = m.slice(index2+6,index3);
+                                    if (type.slice(0,11) == 'application')
+                                        tmp.type = 'download';
+                                    else if (type.slice(0,5) == 'video')
+                                        tmp.type = 'video';
+                                }
+                            }
+                        }
+						
+                        if ((tmp.type == 'unknown') && (tmp.URL != '')) { //valid URL found
+                            //validate the type based on file extension
+                            var ext_pos = tmp.URL.lastIndexOf('.'); //find last '.' in the string
+                            if (ext_pos != -1) {
+                                var ext = tmp.URL.slice(ext_pos+1)
+                                ext = ext.toLowerCase();
+                                if (ext == 'jpg' || ext == 'gif' || ext == 'png')
+                                    tmp.type = 'image';
+                                else if (ext == 'mp3')
+                                    tmp.type = 'audio';
+                                else
+                                    tmp.type = 'video';
+                            }
+                        }
+                    }
+                    if ((tmp.type == 'unknown') || (tmp.processor != '')) {
+                        //else: //no enclosed URL and media content or the processor tag has been set, use the link
+                        index = m.indexOf('<link>');
+                        if (index != -1) {
+                            index2 = m.indexOf('</link>', index+6);
+                            if (index2 != -1) {
+                                value = m.slice(index+6,index2);
+                                tmp.URL = value;
+						
+                                //get the media type
+                                if (type_default != '')
+                                    tmp.type = type_default;
+                                else if (value.slice(0,6) == 'rss://')
+                                    tmp.type = 'rss';               
+                                else
+                                    tmp.type = 'html';
+                            }
+                        }
+                    }
+
+                    if (tmp.URL != '') {
+                        this.list.push(tmp);
+                        counter += 1;
+                    }
+                }
+            }
+		
+            result.error = false;
             return result;
         }
-             
 
+        this.parseATOM = function() {
+            var result = {};
 
-/*--------------------------------------------------------------------
-# Description: Get the file extension of a URL
-# Parameters : filename=local path + file name
-# Return     : the file extension Excluding the dot
-/*------------------------------------------------------------------*/
-function getFileExtension(filename) {
-    var ext_pos = filename.lastIndexOf('.') //find last '.' in the string
-    if (ext_pos != -1) {
-        var ext_pos2 = filename.indexOf('?', ext_pos) //find last '.' in the string
-        if (ext_pos2 != -1)
-            return filename.slice(ext_pos+1,ext_pos2)
-        else
-            return filename.slice(ext_pos+1)
-    }
-    else
-        return ''
-}
-  
-/*----------------------------------------------------------------------------
-        # Description: Parse playlist file. Playlist file can be a:
-        #              -PLX file;
-        #              -RSS v2.0 file (e.g. podcasts);
-        #              -RSS daily Flick file (XML1.0);
-        #              -html Youtube file;
-        # Parameters : URL (optional) =URL of the playlist file.
-        #              mediaitem (optional)=Playlist mediaitem containing 
-        #              playlist info. Replaces URL parameter.
-        #              start_index (optional) = cursor position after loading 
-        #              playlist.
-        #              reload (optional)= indicates if the playlist shall be 
-        #              reloaded or only displayed.
-        # Return     : 0 on success, -1 if failed.
-        /*------------------------------------------------------------------*/
-        function ParsePlaylist(page, URL, mediaitem, start_index, reload, proxy)
-        {
-            /*The application contains 4 CPlayList objects:
-            #(1)main list
-            #Parameter 'this.pl_focus' points to the playlist in focus (1-4).*/
-            var playlist = this.pl_focus;
-            
-            var type = mediaitem.GetType(0);
-            
-            if (reload == true)
-            {
-                //load the playlist              
-                if (type.slice(0,3) == 'rss')
-                    result = playlist.load_rss_20(URL, mediaitem, proxy);
-                else if (type.slice(0,4) == 'atom')
-                    result = playlist.load_atom_10(URL, mediaitem, proxy)
-                else if (type == 'opml')
-                    result = playlist.load_opml_10(URL, mediaitem, proxy)
-                else //assume playlist file
-                    result = playlist.load_plx(URL, mediaitem);
-                
-                if (result == -1) //error
-                    showtime.trace("This playlist requires a newer Navi-X version", true, false);
-                else if (result == -2) //error
-                    showtime.trace("Cannot open file.", true, false);
-                
-                if (result != 0) //failure          
-                    return -1
+            var content = downloader.getRemote(this.path).response;
+
+            if (content == "") {
+                result.error = true;
+                result.errorMsg = "Input playlist is empty.";
+                return result;
             }
-            
-            //succesful
-/*#the next line is for used for debugging only            
-#            playlist.save(RootDir + 'source.plx')*/
-            
-            //this.vieworder = 'ascending' //ascending by default
+
+            content = content.split('<entry');
         
-            /*if (start_index == 0)
-                start_index = playlist.start_index*/
-             
-            this.URL = playlist.URL;
-            this.type = type;
-            if (URL != '')
-                mediaitem.URL = URL;
-            this.mediaitem = mediaitem;
-            
-            //#display the new URL on top of the screen
-            var title = '';
-            if (playlist.title.length > 0)
-                title = playlist.title  + ' - (' + playlist.URL + ')';
+            //parse playlist entries 
+            var counter = 0;
+            var state = 0;
+            var tmp='';
+            var previous_state = 0;
+		
+            var key = '';
+            var value = '';
+            var index = -1;
+
+            //set the default type
+            var index = mediaitem.type.indexOf(":")
+            var type_default;
+            if (index != -1)
+                type_default = mediaitem.type.slice(index+1);
             else
-                title = playlist.URL;
-            
+                type_default = '';
+		
+            var counter = 0;
+		
+            //parse playlist entries 
+            for (var i in content) {
+                var m = content[i];
+                if (counter == 0) {
+                    //fill the title
+                    index = m.indexOf('<title>');
+                    if (index != -1) {
+                        var index2 = m.indexOf('</title>');
+                        if (index != -1) {
+                            var value = m.slice(index+7,index2);
+                            this.title = value;
+                        }
+                    }
+
+                    index = m.indexOf('<subtitle');
+                    if (index != -1) {
+                        index2 = m.indexOf('</subtitle>');
+                        if (index2 != -1) {
+                            value = m.slice(index+13,index2);
+                            this.description = value;
+                            var index3 = this.description.indexOf('<![CDATA[');
+                            if (index3 != -1)
+                                this.description = this.description.slice(9,-3);
+                        }
+                    }
+				
+                    //fill the logo
+                    index = m.indexOf('<logo>');
+                    if (index != -1) {
+                        index2 = m.indexOf('</logo>');
+                        if (index2 != -1) {
+                            index3 = m.indexOf('http', index, index2);
+                            if (index3 != -1) {
+                                var index4 = m.indexOf('</', index3, index2+2);
+                                if (index4 != -1) {
+                                    value = m.slice(index3,index4);
+                                    this.logo = value;
+                                }
+                            }
+                        }
+                    }
+
+                    //fill the logo
+                    index = m.indexOf('<icon>');
+                    if (index != -1) {
+                        index2 = m.indexOf('</icon>');
+                        if (index2 != -1) {
+                            index3 = m.indexOf('http', index, index2);
+                            if (index3 != -1) {
+                                index4 = m.indexOf('</', index3, index2+2);
+                                if (index4 != -1) {
+                                    value = m.slice(index3,index4);
+                                    this.logo = value;
+                                }
+                            }
+                        }
+                    }
+ 
+                    counter += 1;
+                }
+                else {
+                    var tmp = new MediaItem(); //create new item
+                    tmp.processor = this.processor;
+
+                    //get the publication date.
+                    index = m.indexOf('<published');
+                    if (index != -1) {
+                        index2 = m.indexOf('>', index);
+                        if (index2 != -1) {
+                            index3 = m.indexOf('</published');
+                            if (index3 != -1) {
+                                index4 = m.indexOf(':', index2, index3);
+                                if (index4 != -1) {
+                                    value = m.slice(index2+1,index4-3);
+                                    value = value.replace('\n',"");
+                                    tmp.name = value;
+                                }
+                            }
+                        }
+                    }
+								
+                    //get the publication date.
+                    index = m.indexOf('<updated');
+                    if (index != -1) {
+                        index2 = m.indexOf('>', index);
+                        if (index2 != -1) {
+                            index3 = m.indexOf('</updated');
+                            if (index3 != -1) {
+                                index4 = m.indexOf(':', index2, index3);
+                                if (index4 != -1) {
+                                    value = m.slice(index2+1,index4-3);
+                                    value = value.replace('\n',"");
+                                    tmp.name = value;
+                                }
+                            }
+                        }
+                    }
+								
+                    //get the title.
+                    index = m.indexOf('<title');
+                    if (index != -1) {
+                        index2 = m.indexOf('>', index);
+                        if (index2 != -1) {
+                            index3 = m.indexOf('</title>');
+                            if (index3 != -1) {
+                                index4 = m.indexOf('![CDATA[', index2, index3);
+                                if (index4 != -1)
+                                    value = m.slice(index2+10,index3-3);
+                                else
+                                    value = m.slice(index2+1,index3);
+                                value = value.replace('\n'," '");                         
+                                tmp.name = tmp.name + ' ' + value;
+                            }
+                        }
+                    }
+											 
+                    //get the description.
+                    index = m.indexOf('<summary');
+                    if (index != -1) {
+                        index2 = m.indexOf('>', index);
+                        if (index2 != -1) {
+                            index3 = m.indexOf('</summary');
+                            if (index3 != -1) {
+                                value = m.slice(index2+1,index3);
+                                value = value.replace('\n',"");
+                                tmp.description = value;
+                            }
+                        }
+                    }
+
+                    if (tmp.description == '' && tmp.name != '')
+                        tmp.description = tmp.name;
+
+                    //get the thumb
+                    index = m.indexOf('<link type="image');
+                    if (index != -1) {
+                        index2 = m.indexOf('href=', index+16);
+                        if (index2 != -1) {
+                            index3 = m.indexOf('"', index2+6);
+                            if (index3 != -1) {
+                                value = m.slice(index2+6,index3);
+                                tmp.thumb = value;
+                            }
+                        }
+                    }
+
+                    if (tmp.thumb == 'default') {
+                        //no thumb image found, therefore grab any jpg image in the item
+                        index = m.indexOf('.jpg');
+                        if (index != -1) {
+                            index2 = m.rfind('http', 0, index);
+                            if (index2 != -1) {
+                                value = m.slice(index2,index+4);
+                                tmp.thumb = value;
+                            }
+                        }
+                    }
+
+                    //get the enclosed content.
+                    index = m.indexOf('<link rel="enclosure');  
+                    if (index == -1) {
+                        index = m.indexOf('<link');
+                    }
+                    else {
+                        index2 = m.indexOf('href=',index); //get the URL attribute
+                        if (index2 != -1) {
+                            index3 = m.indexOf(m[index2+5], index2+6);
+                            if (index3 != -1) {
+                                value = m.slice(index2+6,index3);
+                                tmp.URL = value;
+                            }
+                        }
+										  
+                        //get the media type
+                        if (type_default != '')
+                            tmp.type = type_default;
+
+                        if (tmp.type == 'unknown') {  
+                            index2 = m.indexOf('type="',index); //get the type attribute
+                            if (index2 != -1) {
+                                index3 = m.indexOf('"', index2+6);
+                                if (index3 != -1) {
+                                    var type = m.slice(index2+6,index3);
+                                    if (type.slice(0,11) == 'application')
+                                        tmp.type = 'download';
+                                    else if (type.slice(0,5) == 'video')
+                                        tmp.type = 'video';
+                                }
+                            }
+                        }
+						
+                        if ((tmp.type == 'unknown') && (tmp.URL != '')) {//valid URL found
+                            //validate the type based on file extension
+                            var ext_pos = tmp.URL.lastIndexOf('.'); //find last '.' in the string
+                            if (ext_pos != -1) {
+                                var ext = tmp.URL.slice(ext_pos+1);
+                                ext = ext.toLowerCase();
+                                if (ext == 'jpg' || ext == 'gif' || ext == 'png')
+                                    tmp.type = 'image';
+                                else if (ext == 'mp3')
+                                    tmp.type = 'audio';
+                                else
+                                    tmp.type = 'html';
+                            }
+                        }
+                    }
+													   
+                    if (tmp.URL != '') {
+                        this.list.push(tmp);
+                        counter++;
+                    }
+                }
+            }
+					
+            result.error = false;
+            return result;
+        }
+
+        this.parseFlickr = function() {
+            var result = {};
+
+            var content = downloader.getRemote(this.path).response;
+
+            if (content == "") {
+                result.error = true;
+                result.errorMsg = "Input playlist is empty.";
+                return result;
+            }
+
+            content = content.split('<item ');
+        
+            var counter = 0;
+
+            //parse playlist entries 
+            for (var i in content) {
+                var m = content[i];
+                if (counter == 0) {
+                    //fill the title
+                    var index = m.indexOf('<title>');
+                    if (index != -1) {
+                        var index2 = m.indexOf('</title>');
+                        if (index != -1) {
+                            var value = m.slice(index + 7, index2);
+                            this.title = value;
+                        }
+                    }
+                
+                    counter += 1;
+                }
+                else {
+                    //get the title.
+                    index = m.indexOf('<title>');
+                    if (index != -1) {
+                        index2 = m.indexOf('</title>', index);
+                        if (index2 != -1) {
+                            value = m.slice(index + 7, index2);
+                            var name = value;
+                        }
+                    }
+
+                    //get the enclosed content.
+                    var items = 0;
+                    index = m.indexOf('<description>');
+                    if (index != -1) {
+                        index2 = m.indexOf('</description>', index);
+                        if (index2 != -1) {
+                            var index3 = m.indexOf('src=', index);
+                            while (index3 != -1) {
+                                var index4 = m.indexOf('"', index3 + 5);
+                                if (index4 != -1) {
+                                    var tmp = new MediaItem(); //create new item
+                                    tmp.type = 'image';
+                                    if (items > 0)
+                                        tmp.name = name + " " + (items+1);
+                                    else
+                                        tmp.name = name;
+                            
+                                    value = m.slice(index3 + 5, index4 - 4);
+                                    if (value[value.length - 6] == '_')
+                                        value = value.slice(0, value.length - 6) + ".jpg";
+                                    tmp.URL = value;
+                                    tmp.thumb = tmp.URL.slice(0, tmp.URL.length - 4) + "_m" + ".jpg";
+                                
+                                    this.list.push(tmp);
+                                    counter += 1;
+
+                                    items += 1;
+                                    index3 = m.indexOf('src=', index4);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+                
+            return 0;
+        }
+
+
+        this.loadPlaylist = function(filename) {
+            var init = new Date();
+
+            if (filename != '')
+                this.path = filename;
+            else
+                this.path = this.mediaitem.URL;
+
+            var type = this.mediaitem.GetType(0);
+
+            var result = {};
+
+            //load the playlist  
+            if (type == 'rss_flickr_daily') 
+                result = this.parseFlickr();         
+            else if (type.slice(0,3) == 'rss')
+                result = this.parseRSS();
+            else if (type.slice(0,4) == 'atom')
+                result = this.parseATOM();
+                /*else if (type == 'opml')
+            result = playlist.load_opml_10(URL, mediaitem)
+        */else //assume playlist file
+                result = this.parsePLX();
+				
+            /*if (result == -1) //error
+            showtime.trace("This playlist requires a newer Navi-X version", true, false);
+        else if (result == -2) //error
+            showtime.trace("Cannot open file.", true, false);*/
+
+            var end = new Date();
+            var time = end - init;
+
+            result.message = 'NAVI-X: Parsed playlist succesfully (' + time + 'ms).';
+				
+            if (result.error) { //failure 
+                result.message = 'NAVI-X: Failed to parse playlist (' + time + 'ms).';
+                return result;
+            }
+
+            if (this.render == true)
+                this.showPage(type);
+
+            return result;
+        }
+
+        this.showPage = function(type) {
+            this.type = type;
+			
+            //display the new URL on top of the screen
+            var title = '';
+            if (this.title.length > 0)
+                title = this.title  + ' - (' + this.path + ')';
+            else
+                title = this.URL;
+			
             var title_final = "";
             var renew=0;
             page.metadata.title = title;
             var tmp_title3 = '';
-            while(title.indexOf('[COLOR=FF') != -1)
-            {
-                var color_index = title.indexOf('[COLOR=FF');
-                var color = title.slice(color_index+9, title.indexOf(']', color_index));
-                var text = title.slice(title.indexOf(']', color_index)+1, title.indexOf('[/COLOR]'));
-                title = title.toString().replace(title.toString().slice(color_index, title.indexOf(']', color_index)+1), '');
-                title = title.toString().replace(title.toString().slice(color_index, title.indexOf('[/COLOR]')+8), '');
-                var tmp_title1 = title.slice(0, color_index);
-                tmp_title3 = title.slice(title.indexOf('[/COLOR]')+8, title.length);
-                var tmp_title2 = text;
-                title_final+='<font color="#ffffff" size="2">'+tmp_title1+'</font>'+
-                    '<font color="'+color+'" size="2">'+tmp_title2+'</font>';
-                //showtime.trace(title_final);
-                renew=1;
+            if (title) {
+                while(title.indexOf('[COLOR=FF') != -1)
+                {
+                    var color_index = title.indexOf('[COLOR=FF');
+                    var color = title.slice(color_index+9, title.indexOf(']', color_index));
+                    var text = title.slice(title.indexOf(']', color_index)+1, title.indexOf('[/COLOR]'));
+                    title = title.toString().replace(title.toString().slice(color_index, title.indexOf(']', color_index)+1), '');
+                    title = title.toString().replace(title.toString().slice(color_index, title.indexOf('[/COLOR]')+8), '');
+                    var tmp_title1 = title.slice(0, color_index);
+                    tmp_title3 = title.slice(title.indexOf('[/COLOR]')+8, title.length);
+                    var tmp_title2 = text;
+                    title_final+='<font color="#ffffff" size="2">'+tmp_title1+'</font>'+
+			    '<font color="'+color+'" size="2">'+tmp_title2+'</font>';
+                    renew=1;
+                }
             }
             if (renew)
                 page.metadata.title = new showtime.RichText(title_final+'<font color="#ffffff" size="2">'+tmp_title3+'</font>');
-            
+			
             //set the background image   
             if (service.backgroundEnabled == "1") {
-                var m = this.playlist.background;
+                var m = this.background;
                 if (m == "default" || m == "previous")
                     m = background_image1;
                 page.metadata.background = m;
             }
-            
-            m = this.playlist.logo;
+			
+            m = this.logo;
             page.metadata.logo = m;
-            
-            var newview = SetListView(playlist.view);
-            page.contents = newview;
-            
+			
+            /*var newview = SetListView(playlist.view);
+        page.contents = newview;*/
+            page.contents = 'list';
+			
             //Display the playlist page
-            SelectPage(page, start_index / page_size, start_index % page_size, false); 
-            
-            return 0 //success
+            var page_size = 200;
+            this.showPageRender(page, this.start_index / page_size, this.start_index % page_size); 
+			
+            return 0; //success
         }
-        
-/*----------------------------------------------------------------------------
-        # Description: Determines the new list view based on playlist and user
-        #              configuration.
-        # Parameters : listview: playlist view property in plx file
-        #              mediaitemview: media entry view property in plx file
-        # Return     : The new requested view
-        /*------------------------------------------------------------------*/   
-        function SetListView(listview)
+
+        this.showPageRender = function(page, current_page, start_pos)
         {
-            var view, newview;
-            if (this.listview == "list")
-                view = "list";
-            else if (this.listview == "thumbnails")
-                view = "thumbnails";
-            else
-                view = listview;
-             
-            if ((view == "default") || (view == "list"))
-                newview = 'items';
-            else if (view == "thumbnails")
-                newview = 'list';       
-            else //list
-                newview = 'items';           
-    
-            return newview;
-        }
-        
-        
-        /*--------------------------------------------------------------------
-        # Description: Large playlists are splitup into pages to improve
-        # performance. This function select one of the playlist pages. The
-        # playlist size is defined by setting variable 'page_size'.
-        # Parameters : page = page to display
-        #              start_pos: cursor start position
-        # Return     : -
-        /*------------------------------------------------------------------*/
-        function SelectPage(page, current_page, start_pos, append)
-        {
-            var playlist = this.pl_focus;
             this.current_page = current_page;
 
             var today=new Date();
             var n=0;
-            for (var i = current_page*page_size; i < playlist.size(); i++)
+            var page_size = 200;
+
+            var playlist_details = this.path.match('playlist/([0-9]*)/(.+?).plx');
+
+            this.name = this.title;
+
+            if (playlist_details) {
+                this.id = playlist_details[1];
+                this.name = playlist_details[2];
+            }
+
+            page.appendItem(PREFIX + ':playlist:screen', "directory", {
+                title: new showtime.RichText('Playlist Features')
+            });
+
+            for (var i = current_page*page_size; i < this.list.length; i++)
             {
-                var m = playlist.list[i];    
+                var m = this.list[i];
                 if (parseInt(m.version) <= parseInt(plxVersion))
                 {
-                    var icon = getPlEntryThumb(m)
-                    
+                    if (!server.authenticated() && (m.URL === 'history.plx' ||  m.URL === 'favorites.plx' || m.URL === 'My Playlists' || m.URL === 'http://www.navixtreme.com/playlist/mine.plx'))
+                        continue;
+
+                    if (m.type === 'window' || m.type === 'html')
+                        continue;
+
+                    var icon = this.getPlEntryThumb(m);
+
                     var label2='';
-                    //if True:
                     if (m.date != '') {
                         try{
                             var dt = m.date.split()
@@ -424,10 +1356,10 @@ function getFileExtension(filename) {
                                 tim = dt[1].split(':')
                             else
                                 tim = ['00', '00', '00']
-                            
+							
                             var entry_date = new Date(dat[0],dat[1],dat[2],tim[0],tim[1],tim[2])
                             var days_past = (today.getDate()-entry_date.getDate())
-                            var hours_past = (today.getHours()-entry_date.getHours())
+                            var hours_past = MAt (today.getHours()-entry_date.getHours())
                             if ((size > 1) && (days_past == 0) && (hours_past < 24))
                                 label2 = 'New ' + hours_past + ' hrs ago';
                             else if (days_past <= 10)
@@ -444,11 +1376,23 @@ function getFileExtension(filename) {
                             showtime.trace("ERROR: Playlist contains invalid date at entry:  "+(n+1));
                         }
                     }
-                    
+					
                     var link = m.URL;
-                    
+                    if (link === 'My Playlists') {
+                        link = 'http://www.navixtreme.com/playlist/mine.plx';
+                        m.type = 'playlist';
+                        m.name = 'My Playlists';
+                    }
+                    else if (link === 'favorites.plx') {
+                        link = 'http://www.navixtreme.com/playlist/' + server.favorites_id + '/favorites.plx';
+                    }
+                    else if (link === 'history.plx') {
+                        link = 'http://www.navixtreme.com/playlist/' + server.history_id + '/history.plx';
+                    }
+					
                     var name_final_color = '';
-                    var name = m.name;
+                    var name = m.name.replace(' (local disk)', '');
+
                     var tmp_name3 = '';
                     var renew = 0;
                     while(name.indexOf('[COLOR=FF') != -1)
@@ -462,7 +1406,7 @@ function getFileExtension(filename) {
                         name = name.toString().replace(name.toString().slice(color_index, name.indexOf(']', color_index)+1), '');
                         name = name.toString().replace(name.toString().slice(color_index, name.indexOf('[/COLOR]')+8), '');
                         name_final_color+=tmp_name1+
-                            '<font color="'+color+'">'+tmp_name2+'</font>';
+							'<font color="'+color+'">'+tmp_name2+'</font>';
                         renew=1;
                     }
                     if (!renew)
@@ -471,8 +1415,20 @@ function getFileExtension(filename) {
                         name_final_color+=tmp_name3;
                     if (label2 != '')
                         name_final_color+='<font color="#ADFF2F">'+' ('+label2+')'+'</font>';
-                    var playlist_link = m.type;
+                    var playlist_link = escape(m.type);
                     playlist_link+=":"+escape(link);
+
+                    if (!m.processor)
+                        m.processor = 'undefined';
+
+                    var titleText = '\n';
+                    if (m.URL)
+                        titleText += '<font size="2" color="87cefa">' + 'URL: ' + m.URL + '</font>';
+                    if (m.URL)
+                        titleText += '\n<font size="2" color="87cefa">' + 'Processor: ' + m.processor + '</font>';
+                        
+                    var metadataTitle = new showtime.RichText(name_final_color + titleText);
+
                     switch (m.type) {
                         case "image":
                             page.appendItem(link,"image", {title: new showtime.RichText(name_final_color), icon: icon});
@@ -481,8 +1437,28 @@ function getFileExtension(filename) {
                             page.appendItem(link,"audio", {title: new showtime.RichText(name_final_color), icon: icon});
                             break;
                         case "video":
-                            page.appendItem(PREFIX + ':video:' + escape(m.name) + ":" + escape(link) + ":" + escape(m.processor),"directory", {
-                                title: new showtime.RichText(name_final_color), icon: icon});
+                            if (link.indexOf('youtube.com') != -1) {
+                                var regex = new RegExp("youtu(?:\.be|be\.com)/(?:.*v(?:/|=)|(?:.*/)?)([a-zA-Z0-9-_]+)");
+                                var id = regex.exec(m.URL);
+
+                                page.appendItem('youtube:video:simple:' + escape(m.name) + ":" + escape(id[1]),"directory", {
+                                    title: metadataTitle, icon: icon});
+                            }
+                            else if (service.advanced != "1") {
+                                page.appendItem(PREFIX + ':video:' + escape(m.name) + ":" + escape(link) + ":" + escape(m.processor),"video", {
+                                    title: metadataTitle, 
+                                    icon: icon,
+                                    description: m.description
+                                });
+                            }
+                            else {
+                                page.appendItem(PREFIX + ':videoscreen:' + i,"video", {
+                                    title: metadataTitle, 
+                                    icon: icon,
+                                    description: m.description,
+                                    year: 2011
+                                });
+                            }
                             break;
                         case "text":
                             page.appendItem(PREFIX + ':text:' + escape(m.name) + ':' + escape(m.URL),"directory", {
@@ -490,25 +1466,20 @@ function getFileExtension(filename) {
                             break;
                         default:
                             page.appendItem(PREFIX + ':playlist:' + playlist_link,"directory", {
-                                title: new showtime.RichText(name_final_color), 
+                                title: new showtime.RichText(name_final_color),
                                 icon: icon
                             });
                             break;
-                            
+							
                     }
                 }
             }
         }
-        
-        /*--------------------------------------------------------------------
-        # Description: Gets the playlist entry thumb image for different types
-        # Parameters : mediaitem: item for which to retrieve the thumb
-        # Return     : thumb image (local) file name
-        /*------------------------------------------------------------------*/
-        function getPlEntryThumb(mediaitem)
+
+        this.getPlEntryThumb = function(mediaitem)
         {
             var type = mediaitem.GetType();   
-        
+		
             //some types are overruled.
             if (type.slice(0,3) == 'rss')
                 type = 'rss';
@@ -523,1930 +1494,1392 @@ function getFileExtension(filename) {
             else if (type == 'directory')
                 type = 'playlist';
             else if (type == 'window')
-                type = 'playlist';         
-            else if (mediaitem.type == 'skin')
-                type = 'script';                
-                
+                type = 'playlist';              
+				
             //if the thumb attribute has been set then use this for the thumb.
             if (mediaitem.thumb != 'default')
                 var URL = mediaitem.thumb;
-            
+			
             return URL;
-        }  
-  
-/*--------------------------------------------------------------------
-# Description: Playlist class. Contains CMediaItem objects
-/*------------------------------------------------------------------*/
-function CPlayList()
-{
-    this.version = '0';
-    this.background = 'default';
-    this.logo = 'none';
-    //
-    this.icon_playlist = 'default';
-    this.icon_rss = 'default';
-    this.icon_script = 'default';
-    this.icon_plugin = 'default';
-    this.icon_video = 'default';
-    this.icon_audio = 'default';
-    this.icon_image = 'default';
-    this.icon_text = 'default';
-    this.icon_search = 'default';
-    this.icon_download = 'default';
-    //
-    this.title = '';
-    this.type = '';
-    this.description = '';
-    this.URL = '';
-    this.player = 'default';
-    this.playmode = 'default';
-    this.view = 'default';  
-    this.start_index = 0;
-    this.list = [];
-        
-    this.add = CPlaylist_add;
-    this.insert = CPlaylist_insert;
-    this.clear = CPlaylist_clear;
-    this.remove = CPlaylist_remove;
-    this.size = CPlaylist_size;
-    this.load_plx = CPlaylist_load_plx;
-    this.load_rss_20 = CPlaylist_load_rss_20;
-    this.load_atom_10 = CPlaylist_load_atom_10;
-    this.load_opml_10 = CPlaylist_load_opml_10;
-}
-    
-    /*--------------------------------------------------------------------
-    # Description: Adds a item to playlist.
-    # Parameters : item = CMediaItem obect
-    # Return     : -
-    /*------------------------------------------------------------------*/
-    function CPlaylist_add(item)
-    {
-        this.list.push(item);
+        }   
     }
 
-    /*--------------------------------------------------------------------
-    # Description: Insert a item to playlist.
-    # Parameters : item = CMediaItem obect
-    #              index=index of entry to remove
-    # Return     : -
-    /*------------------------------------------------------------------*/
-    function CPlaylist_insert(item, index)
-    {
-        this.list.insert(index, item);
-    }
+    function Processor(mediaitem) {
+        this.verbose = 3;
+        this.NIPL = new NIPL(mediaitem);
+        this.downloader = new Downloader(this);
+        this.haveVideoUrl = false;
+        this.error = false;
+        this.message = '';
 
-    /*--------------------------------------------------------------------
-    # Description: clears the complete playlist.
-    # Parameters : -
-    # Return     : -
-    /*------------------------------------------------------------------*/
-    function CPlaylist_clear()
-    {
-        this.list.splice(0, this.list.length);
-    }
-    
-    /*--------------------------------------------------------------------
-    # Description: removes a single entry from the playlist.
-    # Parameters : index=index of entry to remove
-    # Return     : -
-    /*------------------------------------------------------------------*/
-    function CPlaylist_remove(index)
-    {
-        this.list.splice(index, 1);
-    }
+        this.phase = 1;
 
-    /*--------------------------------------------------------------------
-    # Description: Returns the number of playlist entries.
-    # Parameters : -
-    # Return     : number of playlist entries.
-    /*------------------------------------------------------------------*/
-    function CPlaylist_size()
-    {
-        return this.list.length;
-    }
-    
-    /*--------------------------------------------------------------------
-    # Description: Loads a playlist .plx file. File source is indicated by
-    #              the 'filename' parameter or the 'mediaitem' parameter.
-    # Parameters : filename=URL or local file
-    #              mediaitem=CMediaItem object to load
-    # Return     : 0=succes, 
-    #              -1=invalid playlist version, 
-    #              -2=could not open playlist
-    /*------------------------------------------------------------------*/
-    function CPlaylist_load_plx(filename, mediaitem, proxy)
-    {
-        if (filename != '')
-            this.URL = filename;
-        else
-            this.URL = mediaitem.URL;
-        
-        var file = getRemote(this.URL, {}).content;
-        if (file == '')
-            return -2
-        try{
-            var data = file.toString().split(/\r?\n/);
-        }
-        catch(err)
-        {
-            showtime.trace(err);
-            return -2
-        }
-        
-        //defaults
-        this.version = '-1';
-        this.background = mediaitem.background;
-        this.logo = 'none';
-        if (mediaitem.thumb != 'default')
-            this.logo = mediaitem.thumb;
-        //
-        this.icon_playlist = 'default';
-        this.icon_rss = 'default';
-        this.icon_script = 'default';
-        this.icon_video = 'default';
-        this.icon_audio = 'default';
-        this.icon_image = 'default';
-        this.icon_text = 'default';
-        this.icon_search = 'default';
-        this.icon_download = 'default';
-        //
-        this.title = '';
-        this.type = 'playlist';
-        this.description = '';
-        this.player = mediaitem.player;
-        this.view = mediaitem.view;
-        this.processor = mediaitem.processor;
-        this.playmode = 'default';         
-        this.start_index = 0;
+        var init = new Date();
 
-        //parse playlist entries 
-        var counter = 0;
-        var state = 0;
-        var tmp='';
-        var previous_state = 0;
-        
-        var key = '';
-        var value = '';
-        var index = -1;
-        
-        for each (var m in data)
-        {
-            if (state == 2) //parsing description field
-            {
-                index = m.indexOf('/description');
-                if (index != -1)
-                {
-                    this.description = this.description + "\n" + m.slice(0, index);
-                    state = 0;
-                }
-                else
-                    this.description = this.description + "\n" + m;
-            }
-            else if (state == 3) //parsing description field
-            {
-                index = m.indexOf('/description');
-                if (index != -1)
-                {
-                    tmp.description = tmp.description + "\n" + m.slice(0, index);
-                    state = 1;
-                }
-                else
-                    tmp.description = tmp.description + "\n" + m;
-            }
-            else if (state == 4) //multiline comment
-            {
-                if (m.slice(0,3) == '"""')
-                    state = previous_state;
-            }
-            else if (m && m[0] != '//')
-            {
-                if (m.slice(0,3) == '"""')
-                {
-                    previous_state = state;
-                    state = 4; //muliline comment state
-                    continue; //continue with next line
-                }
-                index = m.indexOf('=');
-                if (index != -1)
-                {
-                    key = m.slice(0, index);
-                    value = m.slice(index+1, m.length);
-                    if (key == 'version' && state == 0)
-                    {
-                        this.version = value;
-                        //check the playlist version
-                        if (parseInt(this.version) > parseInt(plxVersion))
-                            return -1 //invalid
-                        else
-                            this.list.splice(0, this.list.length);
-                    }
-                    else if (key == 'background' && state == 0)
-                        this.background=value;
-                    else if (key == 'player' && state == 0)
-                        this.player=value;
-                    else if (key == 'logo' && state == 0)
-                        this.logo=value;
-                    //
-                    else if (key == 'icon_playlist' && state == 0)
-                        this.icon_playlist=value;
-                    else if (key == 'icon_rss' && state == 0)
-                        this.icon_rss=value;                        
-                    else if (key == 'icon_script' && state == 0)
-                        this.icon_script=value;                        
-                    else if (key == 'icon_video' && state == 0)
-                        this.icon_video=value;                        
-                    else if (key == 'icon_audio' && state == 0)
-                        this.icon_audio=value;                        
-                    else if (key == 'icon_image' && state == 0)
-                        this.icon_image=value;
-                    else if (key == 'icon_text' && state == 0)
-                        this.icon_text=value;
-                    else if (key == 'icon_search' && state == 0)
-                        this.icon_search=value;
-                    else if (key == 'icon_download' && state == 0)
-                        this.icon_download=value;
-                    //                      
-                    else if (key == 'title' && state == 0)
-                        this.title=value;
-                    else if (key == 'description' && state == 0)
-                    {
-                        index = value.indexOf('/description');
-                        if (index != -1)
-                            this.description=value.slice(0,index);
-                        else
-                        {
-                            this.description=value;
-                            state = 2; //description on more lines
-                        }
-                    }
-                    else if (key == 'playmode' && state == 0)
-                        this.playmode=value;
-                    else if (key == 'view' && state == 0)
-                        this.view=value;                           
-                    else if (key == 'type')
-                    {
-                        if (state == 1)
-                            this.list.push(tmp);
-                        else //state=0                        
-                            this.list.splice(0, this.list.length);
-//@todo                            
-                        tmp = new CMediaItem(); //create new item
-                        tmp.type = value;
-                        if (tmp.type == 'video' || tmp.type == 'audio')
-                        {
-                            tmp.player = this.player;
-                            tmp.processor = this.processor;
-                        }
+        this.concat = function(line) {
+            var regex = new RegExp('([^ ]+)[ ]([^ ]+)[ =](.+)');
+            var params = regex.exec(line);
 
-                        counter = counter + 1;
-                        state = 1;
-                    }
-                    else if (key == 'version' && state == 1)
-                        tmp.version=value;
-                    else if (key == 'name')
-                        tmp.name=value;
-                    else if (key == 'date')
-                        tmp.date=value;  
-                    else if (key == 'thumb')
-                        tmp.thumb=value;
-                    else if (key == 'icon')
-                        tmp.icon=value;    
-                    else if (key == 'URL')
-                        tmp.URL=value;
-                    else if (key == 'DLloc')
-                        tmp.DLloc=value;
-                    else if (key == 'player')
-                        tmp.player=value; 
-                    else if (key == 'background')
-                        tmp.background=value;
-                    else if (key == 'rating')
-                        tmp.rating=value;
-                    else if (key == 'infotag')
-                        tmp.infotag=value;                        
-                    else if (key == 'view')
-                        tmp.view=value;  
-                    else if (key == 'processor')
-                        tmp.processor=value;
-                    else if (key == 'playpath')
-                        tmp.playpath=value;
-                    else if (key == 'swfplayer')
-                        tmp.swfplayer=value;    
-                    else if (key == 'pageurl')
-                        tmp.pageurl=value;   
-                    else if (key == 'description')
-                    {
-                        //this.description = ' ' //this will make the description field visible
-                        index = value.indexOf('/description');
-                        if (index != -1)
-                            tmp.description=value.slice(0, index);
-                        else
-                        {
-                            tmp.description=value;
-                            state = 3; //description on more lines 
-                        }
-                    }
-                }
-            }
-        }
-        
-        if ((state == 1) || (previous_state == 1))
-            this.list.push(tmp);
-        
-        /*if no version ID is found then this is not a valid playlist.
-#the next lines to not work because they current playlist is already lost.
-#        if this.version == '-1':
-#            return -2*/
-        
-        return 0 //successful
-    }
-    
-    /*--------------------------------------------------------------------
-    # Description: Loads a RSS webfeed.
-    # Parameters : filename=URL or local file
-    #              mediaitem=CMediaItem object to load    
-    # Return     : 0=succes, 
-    #              -1=invalid playlist version, 
-    #              -2=could not open playlist
-    /*------------------------------------------------------------------*/
-    function CPlaylist_load_rss_20(filename, mediaitem, proxy) {
-        if (filename != '')
-            this.URL = filename
-        else
-            this.URL = mediaitem.URL
+            var key = params[2];
+            var value = params[3];
+            var append = true;
 
-        if (this.URL.slice(0,6) == 'rss://')      
-            this.URL = this.URL.replace('rss:', 'http:')
+            showtime.trace('Proc debug concat:');
+            showtime.print('old: ' + this.NIPL.vars[key]);
         
-        var data = getRemote(this.URL).content.split('<item')
-        
-        //defaults
-        this.version = plxVersion
-        //use the current background image if mediaitem background is not set.
-        if (mediaitem.background != 'default')
-            this.background = mediaitem.background
-        this.logo = 'none'
-        this.title = ''
-        this.description = ''
-        this.player = mediaitem.player
-        this.processor = mediaitem.processor
-        this.playmode = 'default'
-        this.start_index = 0
-        //clear the list
-        this.list.splice(this.list.length)
-        
-        //set the default type
-        var index=mediaitem.type.indexOf(":")
-        var type_default;
-        if (index != -1)
-            type_default = mediaitem.type.slice(index+1)
-        else
-            type_default = ''
-        
-        var counter=0
-        //parse playlist entries 
-        for each(var m in data) {
-            if (counter == 0) {
-                //fill the title
-                index = m.indexOf('<title>')
-                if (index != -1) {
-                    var index2 = m.indexOf('</title>')
-                    if (index != -1) {
-                        var value = m.slice(index+7,index2)
-                        this.title = value
-                    }
-                }
-
-                index = m.indexOf('<description>')
-                if (index != -1) {
-                    index2 = m.indexOf('</description>')
-                    if (index2 != -1) {
-                        value = m.slice(index+13,index2)
-                        this.description = value
-                        var index3 = this.description.indexOf('<![CDATA[')
-                        if (index3 != -1)
-                            this.description = this.description.slice(9,this.description-3)
-                    }
-                }
-                
-                //fill the logo
-                index = m.indexOf('<image>')
-                if (index != -1) {
-                    index2 = m.indexOf('</image>')
-                    if (index != -1) {
-                        index3 = m.indexOf('<url>', index, index2)
-                        if (index != -1) {
-                            var index4 = m.indexOf('</url>', index, index2)
-                            if (index != -1)
-                                value = m.slice(index3+5,index4)
-                                this.logo = value
-                        }
-                    }
-                }
-                else { //try if itunes image
-                    index = m.indexOf('<itunes:image href="')
-                    if (index != -1) {
-                        index2 = m.indexOf('"', index+20)
-                        if (index != -1) {
-                            value = m.slice(index+20,index2)
-                            this.logo = value
-                        }
-                    }
-                }
-       
-                counter++
+            if (value[0] == "'") {
+                value = value.slice(1);
             }
             else {
-                var tmp = new CMediaItem() //create new item
-                tmp.player = this.player
-                tmp.processor = this.processor
+                value = this.getVariableValue(value);
+            }
 
-                //get the publication date.
-                /*index = m.indexOf('<pubDate')
-                if (index != -1) {
-                    index2 = m.indexOf('>', index)
-                    if (index2 != -1) {
-                        index3 = m.indexOf('</pubDate')
-                        if (index3 != -1) {
-                            index4 = m.indexOf(':', index2, index3)
-                            if (index4 != -1) {
-                                value = m.slice(index2+1,index4-2)
-                                value = value.replace('\n',"") 
-                                tmp.date = value
-                            }
-                        }
-                    }
-                }*/
+            this.NIPL.setValue(key, value, append);
 
-                //get the title.
-                index = m.indexOf('<title')
-                if (index != -1) {
-                    index2 = m.indexOf('>', index)
-                    if (index2 != -1) {
-                        index3 = m.indexOf('</title>')
-                        if (index3 != -1) {
-                            index4 = m.indexOf('![CDATA[', index2, index3)
-                            if (index4 != -1)
-                                value = m.slice(index2+10,index3-3)
-                            else
-                                value = m.slice(index2+1,index3)
-                            value = value.replace('\n'," '")                              
-                            tmp.name = tmp.name + value
-                        }
-                    }
-                }
-                                             
-                //get the description.
-                var index1 = m.indexOf('<content:encoded>')
-                index = m.indexOf('<description>')
-                if (index1 != -1) {
-                    index2 = m.indexOf('</content:encoded>')
-                    if (index2 != -1) {
-                        value = m.slice(index1+17,index2)
-                        //value = value.replace('&#39;',"\'")   
-                        tmp.description = value
-                        index3 = tmp.description.indexOf('<![CDATA[')
-                        if (index3 != -1)
-                            tmp.description = tmp.description.slice(9,-3)
-                        showtime.trace(tmp.description)
-                    }
-                }
-                else if (index != -1) {
-                    index2 = m.indexOf('</description>')
-                    if (index2 != -1) {
-                        value = m.slice(index+13,index2)
-                        //value = value.replace('&#39;',"\'")   
-                        tmp.description = value
-                        index3 = tmp.description.indexOf('<![CDATA[')
-                        if (index3 != -1)
-                            tmp.description = tmp.description.slice(9,-3)
-                    }
-                }
+            showtime.print('new: ' + this.NIPL.vars[key]);
+        }
 
-                //get the thumb
-                index = m.indexOf('<media:thumbnail')
-                if (index != -1) {
-                    index2 = m.indexOf('url=', index+16)
-                    if (index2 != -1) {
-                        index3 = m.indexOf('"', index2+5)
-                        if (index3 != -1) {
-                            value = m.slice(index2+5,index3)
-                            tmp.thumb = value
-                        }
-                    }
-                }
-                            
-                if (tmp.thumb == 'default') {
-                    //no thumb image found, therefore grab any jpg image in the item
-                    index = m.indexOf('.jpg')
-                    if (index != -1) {
-                        index2 = m.lastIndexOf('http', 0, index)
-                        if (index2 != -1) {
-                            value = m.slice(index2,index+4)
-                            tmp.thumb = value  
-                            showtime.trace(tmp.thumb);
-                        }
-                    }
-                }
-                
-                //get the enclosed content.
-                index = m.indexOf('enclosure')
-                index1 = m.indexOf ('<media:content')              
-                if (((index != -1) || (index1 != -1))) { // and (tmp.processor==''):
-                    //enclosure is first choice. If no enclosure then use media:content
-                    if ((index == -1) && (index1 != -1))
-                        index = index1
-                    index2 = m.indexOf('url="',index) //get the URL attribute
-                    if (index2 != -1)
-                        index3 = m.indexOf('"', index2+5)
-                    else {
-                        index2 = m.indexOf("url='",index)
-                        if (index2 != -1)
-                            index3 = m.indexOf("'", index2+5)
-                    }
-                    if ((index2 != -1) && (index3 != -1))
-                        value = m.slice(index2+5,index3)
-                        tmp.URL = value
-                    
-                    //get the media type
-                    if (type_default != '')
-                        tmp.type = type_default
+        // From NP's Megaviewer
+        this.countdown = function(line) { 
+            var regex = new RegExp('([^ ]+)[ ](.+)');
+            var params = regex.exec(line);
 
-                    if (tmp.type == 'unknown') {  
-                        index2 = m.indexOf('type="',index) //get the type attribute
-                        if (index2 != -1) {
-                            index3 = m.indexOf('"', index2+6)
-                            if (index3 != -1) {
-                                var type = m.slice(index2+6,index3)
-                                if (type.slice(0,11) == 'application')
-                                    tmp.type = 'download'
-                                else if (type.slice(0,5) == 'video')
-                                    tmp.type = 'video'
-                            }
-                        }
-                    }
-                        
-                    if ((tmp.type == 'unknown') && (tmp.URL != '')) { //valid URL found
-                        //validate the type based on file extension
-                        var ext_pos = tmp.URL.lastIndexOf('.') //find last '.' in the string
-                        if (ext_pos != -1) {
-                            var ext = tmp.URL.slice(ext_pos+1)
-                            ext = ext.toLowerCase()
-                            if (ext == 'jpg' || ext == 'gif' || ext == 'png')
-                                tmp.type = 'image'
-                            else if (ext == 'mp3')
-                                tmp.type = 'audio'
-                            else
-                                tmp.type = 'video'
-                        }
-                    }
-                }
-                if ((tmp.type == 'unknown') || (tmp.processor != '')) {
-                //else: //no enclosed URL and media content or the processor tag has been set, use the link
-                    index = m.indexOf('<link>')
-                    if (index != -1) {
-                        index2 = m.indexOf('</link>', index+6)
-                        if (index2 != -1) {
-                            value = m.slice(index+6,index2)  
-                            tmp.URL = value
-                        
-                            //get the media type
-                            if (type_default != '')
-                                tmp.type = type_default
-                            else if (value.slice(0,6) == 'rss://')
-                                tmp.type = 'rss'                       
-                            else
-                                tmp.type = 'html'
-                        }
-                    }
-                }
-                                        
-                if (tmp.URL != '') {
-                    this.list.push(tmp)
-                    counter = counter + 1
-                }
+            var time = params[2];
+            if (time[0] === "'")
+                time = time.slice(1);
+
+            showtime.print('Loading video...');
+            for (var j = 0; j < parseInt(time); j++){
+                showtime.print('Waiting ' + (time-j) + ' seconds');
+                showtime.sleep(1000);
             }
         }
-        
-        /*#Post rocessing in case of Youtube playlist URL.   
-        this.load_youtube_postprocessor(filename, mediaitem, proxy) */
-        
-        return 0
-    }
-    
-    /*--------------------------------------------------------------------
-    # Description: Loads a atom webfeed.
-    # Parameters : filename=URL or local file
-    #              mediaitem=CMediaItem object to load    
-    # Return     : 0=success, 
-    #              -1=invalid playlist version, 
-    #              -2=could not open playlist
-    /*------------------------------------------------------------------*/
-    function CPlaylist_load_atom_10(filename, mediaitem, proxy) {
-        if (filename != '')
-            this.URL = filename
-        else
-            this.URL = mediaitem.URL
 
-        try {
-            var data = getRemote(this.URL).content.split('<entry')
+        this.debug = function(line) { 
+            var params = line.split(' ');
+
+            showtime.print(params[1] + ': ' + this.getVariableValue(params[1]));
         }
-        catch(err) {
-            showtime.trace(err)
-            return -2;
+
+        this.error = function(line) { 
+            var regex = new RegExp('([^ ]+)[ ](.+)');
+            var params = regex.exec(line);
+
+            var error = params[2];
+            if (error[0] == "'")
+                error = error.slice(1);
+
+            var end = new Date();
+            var time = end - init;
+
+            showtime.trace('Processor error: ' + error + ' (' + time + 'ms)');
+            this.error = true;
+            this.message = 'Processor error: ' + error + ' (' + time + 'ms)';
+
+            store.add_report_processor(mediaitem.URL, mediaitem.processor, error);
         }
+
+        this.escape = function(line) { 
+            var params = line.split(' ');
+
+            this.NIPL.vars[params[1]] = escape(this.NIPL.vars[params[1]]);
+        }
+
+        this.match = function(line) { 
+            for (var v in this.NIPL.vars) {
+                if (v && typeof v == 'string' && v[0] === 'v' && !isNaN(parseInt(v.slice(1)))) {
+                    delete this.NIPL.vars[v];
+                }
+            }
+
+            if (!this.NIPL.vars['regex'])
+                return -1;
+
+            var params = line.split(' ');
+            var key = params[1];
+
+            var regex = this.NIPL.vars['regex'];
+            var match = null;
+
+            var switches = 'm';
+            var value = this.getVariableValue(key);
+
+            if (regex.search(/^\(\?([gmsi]+)\)/) == 0) {
+                switches = RegExp.$1;
+                regex = regex.replace(/^\(\?[gmsi]+\)/,'');
+            }
+            if(switches.match(/s/)){
+                switches=switches.replace(/s/,'');
+                regex = regex.replace(/\\n/g,'\\s');
+                value = value.replace(/\n/g," ");
+            }
         
-        //defaults
-        this.version = plxVersion
-        //use the current background image if mediaitem background is not set.
-        if (mediaitem.background != 'default')
-            this.background = mediaitem.background
-        this.logo = 'none'
-        this.title = ''
-        this.description = ''
-        this.player = mediaitem.player
-        this.processor = mediaitem.processor
-        this.playmode = 'default'
-        this.start_index = 0
-        //clear the list
-        this.list.splice(this.list.lenght)
+            regex = new RegExp(regex, switches);
         
-        //set the default type
-        var index=mediaitem.type.indexOf(":")
-        var type_default
-        if (index != -1)
-            type_default = mediaitem.type.slice(index+1)
-        else
-            type_default = ''
-        
-        var counter=0
-        //parse playlist entries 
-        for each (var m in data) {
-            if (counter == 0) {
-                //fill the title
-                index = m.indexOf('<title>')
-                if (index != -1) {
-                    var index2 = m.indexOf('</title>')
-                    if (index != -1) {
-                        var value = m.slice(index+7,index2)
-                        this.title = value
-                    }
+            match = regex.exec(value);
+
+            if (!match)
+                this.NIPL.vars.nomatch = '1';
+            else {
+                var i = 1;
+                for (var q = 1; q < match.length; q++) {
+                    this.NIPL.setValue('v' + i, match[q]);
+                    i++;
                 }
 
-                index = m.indexOf('<subtitle')
-                if (index != -1) {
-                    index2 = m.indexOf('</subtitle>')
-                    if (index2 != -1) {
-                        value = m.slice(index+13,index2)
-                        this.description = value
-                        var index3 = this.description.indexOf('<![CDATA[')
-                        if (index3 != -1)
-                            this.description = this.description.slice(9,-3)
-                    }
-                }
-                
-                //fill the logo
-                index = m.indexOf('<logo>')
-                if (index != -1) {
-                    index2 = m.indexOf('</logo>')
-                    if (index2 != -1) {
-                        index3 = m.indexOf('http', index, index2)
-                        if (index3 != -1) {
-                            var index4 = m.indexOf('</', index3, index2+2)
-                            if (index4 != -1) {
-                                value = m.slice(index3,index4)
-                                this.logo = value
-                            }
-                        }
-                    }
-                }
+                delete this.NIPL.vars['nomatch'];
+            }
 
-                //fill the logo
-                index = m.indexOf('<icon>')
-                if (index != -1) {
-                    index2 = m.indexOf('</icon>')
-                    if (index2 != -1) {
-                        index3 = m.indexOf('http', index, index2)
-                        if (index3 != -1) {
-                            index4 = m.indexOf('</', index3, index2+2)
-                            if (index4 != -1) {
-                                value = m.slice(index3,index4)
-                                this.logo = value
-                            }
-                        }
-                    }
+            if (match)
+                showtime.trace('Processor match ' + key + ':');
+            else
+                showtime.trace('Processor match ' + key + ':' + ' no match');
+
+            for (var v in this.NIPL.vars) {
+                if (v && typeof v == 'string' && v[0] === 'v' && parseInt(v.slice(1)) != NaN) {
+                    showtime.print(v + '=' + this.NIPL.vars[v]);
                 }
- 
-                counter = counter + 1
+            }
+
+            this.NIPL.vars['regex'] = undefined;
+
+            return 0;
+        }
+
+        this.play = function() { 
+            this.NIPL.vars['videoUrl'] = this.NIPL.vars.url;
+
+            if (this.NIPL.vars['playpath']>'' || this.NIPL.vars['swfplayer']>'') {
+                this.NIPL.vars.videoUrl += ' tcUrl='+this.NIPL.vars['url'];
+                if (this.NIPL.vars['app']>'')
+                    this.NIPL.vars.videoUrl += ' app='+this.NIPL.vars['app'];
+                if (this.NIPL.vars['playpath']>'')
+                    this.NIPL.vars.videoUrl += ' playpath='+this.NIPL.vars['playpath'];
+                if (this.NIPL.vars['swfplayer']>'')
+                    this.NIPL.vars.videoUrl += ' swfUrl='+this.NIPL.vars['swfplayer'];
+                if (this.NIPL.vars['pageurl']>'')
+                    this.NIPL.vars.videoUrl += ' pageUrl='+this.NIPL.vars['pageurl'];
+                if (this.NIPL.vars['swfVfy']>'')
+                    this.NIPL.vars.videoUrl += ' swfVfy='+this.NIPL.vars['swfVfy'];
+            }
+
+            showtime.trace('Processor final result:');
+            showtime.print('URL: ' + this.NIPL.vars['videoUrl']);
+
+            this.haveVideoUrl = true;
+
+            this.NIPL.vars['videoUrl'] = this.NIPL.vars['videoUrl'].replace(/\//, '/');
+
+            var end = new Date();
+            var time = end - init;
+
+            return {
+                error: false,
+                message: 'Video succesfully processed' + ' (' + time + 'ms)',
+                video: this.NIPL.vars['videoUrl']
+            }
+        }
+
+        this.print = function(line) {
+            var params = line.split(' ');
+            if (params.length === 2) {
+                if (params[1] == 'htmRaw')
+                    return;
+                this.debug('debug ' + params[1]);
             }
             else {
-                var tmp = new CMediaItem() //create new item
-                tmp.player = this.player
-                tmp.processor = this.processor
+                var regex = new RegExp('([^ ]+)[ ](.+)');
+                var params = regex.exec(line);
 
-                //get the publication date.
-                index = m.indexOf('<published')
-                if (index != -1) {
-                    index2 = m.indexOf('>', index)
-                    if (index2 != -1) {
-                        index3 = m.indexOf('</published')
-                        if (index3 != -1) {
-                            index4 = m.indexOf(':', index2, index3)
-                            if (index4 != -1) {
-                                value = m.slice(index2+1,index4-3)
-                                value = value.replace('\n',"") 
-                                tmp.name = value
-                            }
+                showtime.print(params[2].slice(1));
+            }
+        }
+
+        this.replace = function(line) { 
+            if (!this.NIPL.vars['regex'])
+                return -1;
+
+            var regex = new RegExp('([^ ]+)[ ]([^ ]+)[ ](.+)');
+            var params = regex.exec(line);
+
+            var key = params[2];
+            var value = params[3];
+            if (value[0] == "'")
+                value = value.slice(1);
+            else {
+                value = this.NIPL.vars[value];
+            }
+
+            var regex_match = new RegExp(this.NIPL.vars['regex'], "g");
+
+            showtime.trace('Proc debug replace src:');
+            showtime.print('key: ' + key + '\nregex: ' + regex_match + '\nvalue: ' + value);
+            showtime.print('old: ' + this.getVariableValue(key));
+
+            if (!this.NIPL.vars[key])
+                this.NIPL.vars[key]  = "";
+            this.NIPL.vars[key] = this.NIPL.vars[key].replace(regex_match, value);
+
+            showtime.print('new: ' + this.getVariableValue(key));
+
+            this.NIPL.vars['regex'] = "";
+
+            return 0;
+        }
+
+        this.report = function(page) {
+            var args = {
+                'phase': this.phase
+            };
+
+            showtime.trace('Processor report:');
+            showtime.print('phase: ' + this.phase);
+            for (var v in this.NIPL.vars) {
+                if (v && typeof v == 'string' && v[0] === 'v' && parseInt(v.slice(1)) != NaN) {
+                    //showtime.print(v + ': ' + this.NIPL.vars[v]);
+                    args[v] = this.NIPL.vars[v];
+                }
+            }
+            for (var el in this.NIPL.vars.reports) {
+                //showtime.print(el + ': ' + this.NIPL.vars.reports[el]);
+                args[el] = this.NIPL.vars.reports[el];
+            }
+
+            this.phase += 1;
+
+            showtime.trace('Processor: phase ' + this.phase + ' learn');
+            return this.getUrl(page, mediaitem, args);
+        };
+    
+        this.report_val = function(line) { 
+            var regex = new RegExp('^([^=]+)[=](.+)');
+            var params = regex.exec(line);
+
+            var key = params[1].split(' ')[1];
+            var value = params[2];
+            if (value[0] === "'")
+                value = value.slice(1);
+            else {
+                value = this.NIPL.vars[value];
+            }
+
+            this.NIPL.vars.reports[key] = value;
+
+            showtime.trace('Processor debug report value: ' + key + ' set to string literal');
+            showtime.print(this.NIPL.vars.reports[key]);
+        }
+    
+        this.scrape = function() {
+            if (this.NIPL.vars['s_url'] == '') {
+                this.error("error 'no scrape URL defined");
+                return;
+            }
+
+            var downloader = new Downloader(this);
+            downloader.controls.debug = false;
+
+            if (this.NIPL.vars['s_action'] == 'geturl') {
+                this.NIPL.vars['s_action'] = 'get';
+                this.NIPL.vars['s_method'] = 'geturl';
+            }
+
+            if (this.NIPL.vars['s_method'] == 'geturl' || this.NIPL.vars['s_action'] == 'headers') {
+                downloader.controls.headRequest = true;
+                downloader.controls.noFollow = true;
+            }
+
+            var data = downloader.getRemote(this.NIPL.vars['s_url']);
+        
+            //showtime.print(data.response);
+            this.NIPL.vars['htmRaw'] = data.response;
+
+            if (this.NIPL.vars['s_method'] != 'geturl' && this.NIPL.vars['s_action'] != 'headers') {
+                showtime.trace('Processor debug headers:');
+                for (var hdr in data.headers) {
+                    showtime.print(hdr + ': ' + data.headers[hdr]);
+                    this.NIPL.vars.headers[hdr] = data.headers[hdr];
+                }
+
+                showtime.trace('Processor debug cookies:');
+                if (data.multiheaders['Set-Cookie']) {
+                    for (var hdr in data.multiheaders['Set-Cookie']) {
+                        var header = data.multiheaders['Set-Cookie'][hdr].toString();
+                        header = header.slice(0, header.toString().indexOf(';'));
+
+                        if (header > '') {
+                            var params = header.split('=');
+                            var key = params[0];
+                            var value = params[1];
+                            this.NIPL.vars['cookies'][key] = value;
+                            showtime.print(key + ': ' + value);
                         }
                     }
                 }
-                                
-                //get the publication date.
-                index = m.indexOf('<updated')
-                if (index != -1) {
-                    index2 = m.indexOf('>', index)
-                    if (index2 != -1) {
-                        index3 = m.indexOf('</updated')
-                        if (index3 != -1) {
-                            index4 = m.indexOf(':', index2, index3)
-                            if (index4 != -1) {
-                                value = m.slice(index2+1,index4-3)
-                                value = value.replace('\n',"") 
-                                tmp.name = value 
-                            }
+
+                if (this.NIPL.vars['regex'] != '') {
+                    showtime.trace('Processor scrape:');
+                    this.match('match htmRaw');
+
+                    if (this.NIPL.vars['nomatch'] && this.NIPL.vars['nomatch'] == '1')
+                        showtime.print('no match');
+                }
+            }
+            else if (this.NIPL.vars['s_method'] == 'geturl' && this.NIPL.vars['s_action'] != 'headers') {
+                if (data.headers['Location'] && data.headers['Location'] != '') {
+                    this.NIPL.vars['geturl'] = data.headers['Location'];
+                    this.NIPL.vars['v1'] = data.headers['Location'];
+                }
+                else {
+                    this.NIPL.vars['geturl'] = this.NIPL.vars['s_url'];
+                    this.NIPL.vars['v1'] = this.NIPL.vars['s_url'];
+                }
+            }
+            else if (this.NIPL.vars['s_action'] == 'headers') {
+                for (var hdr in data.headers) {
+                    showtime.print(hdr + ': ' + data.headers[hdr]);
+                    this.NIPL.vars.headers[hdr] = data.headers[hdr];
+                }
+
+                showtime.trace('Processor debug cookies:');
+                if (data.multiheaders['Set-Cookie']) {
+                    for (var hdr in data.multiheaders['Set-Cookie']) {
+                        var header = data.multiheaders['Set-Cookie'][hdr].toString();
+                        header = header.slice(0, header.toString().indexOf(';'));
+
+                        if (header > '') {
+                            var params = header.split('=');
+                            var key = params[0];
+                            var value = params[1];
+                            this.NIPL.vars['cookies'][key] = value;
+                            showtime.print(key + ': ' + value);
                         }
                     }
                 }
-                                
-                //get the title.
-                index = m.indexOf('<title')
-                if (index != -1) {
-                    index2 = m.indexOf('>', index)
-                    if (index2 != -1) {
-                        index3 = m.indexOf('</title>')
-                        if (index3 != -1) {
-                            index4 = m.indexOf('![CDATA[', index2, index3)
-                            if (index4 != -1)
-                                value = m.slice(index2+10,index3-3)
-                            else
-                                value = m.slice(index2+1,index3)
-                            value = value.replace('\n'," '")                              
-                            tmp.name = tmp.name + ' ' + value
-                        }
-                    }
-                }
-                                             
-                //get the description.
-                index = m.indexOf('<summary')
-                if (index != -1) {
-                    index2 = m.indexOf('>', index)
-                    if (index2 != -1) {
-                        index3 = m.indexOf('</summary')
-                        if (index3 != -1) {
-                            value = m.slice(index2+1,index3)
-                            value = value.replace('\n',"") 
-                            tmp.description = value
-                        }
-                    }
-                }
-
-                if (tmp.description == '' && tmp.name != '')
-                    tmp.description = tmp.name
-
-                //get the thumb
-                index = m.indexOf('<link type="image')
-                if (index != -1) {
-                    index2 = m.indexOf('href=', index+16)
-                    if (index2 != -1) {
-                        index3 = m.indexOf('"', index2+6)
-                        if (index3 != -1) {
-                            value = m.slice(index2+6,index3)
-                            tmp.thumb = value
-                        }
-                    }
-                }
-
-                if (tmp.thumb == 'default') {
-                    //no thumb image found, therefore grab any jpg image in the item
-                    index = m.indexOf('.jpg')
-                    if (index != -1) {
-                        index2 = m.rfind('http', 0, index)
-                        if (index2 != -1) {
-                            value = m.slice(index2,index+4)
-                            tmp.thumb = value
-                        }
-                    }
-                }
-
-                //get the enclosed content.
-                index = m.indexOf('<link rel="enclosure')   
-                if (index == -1)
-                    index = m.indexOf('<link')   
-                if (index != -1) {
-                    index2 = m.indexOf('href=',index) //get the URL attribute
-                    if (index2 != -1) {
-                        index3 = m.indexOf(m[index2+5], index2+6)
-                        if (index3 != -1) {
-                            value = m.slice(index2+6,index3)
-                            tmp.URL = value
-                        }
-                    }
-                                          
-                    //get the media type
-                    if (type_default != '')
-                        tmp.type = type_default
-
-                    if (tmp.type == 'unknown') {  
-                        index2 = m.indexOf('type="',index) //get the type attribute
-                        if (index2 != -1) {
-                            index3 = m.indexOf('"', index2+6)
-                            if (index3 != -1) {
-                                var type = m.slice(index2+6,index3)
-                                if (type.slice(0,11) == 'application')
-                                    tmp.type = 'download'
-                                else if (type.slice(0,5) == 'video')
-                                    tmp.type = 'video'
-                            }
-                        }
-                    }
-                        
-                    if ((tmp.type == 'unknown') && (tmp.URL != '')) {//valid URL found
-                        //validate the type based on file extension
-                        var ext_pos = tmp.URL.lastIndexOf('.') //find last '.' in the string
-                        if (ext_pos != -1) {
-                            var ext = tmp.URL.slice(ext_pos+1)
-                            ext = ext.toLowerCase()
-                            if (ext == 'jpg' || ext == 'gif' || ext == 'png')
-                                tmp.type = 'image'
-                            else if (ext == 'mp3')
-                                tmp.type = 'audio'
-                            else
-                                tmp.type = 'html'
-                        }
-                    }
-                }
-                                                       
-                if (tmp.URL != '') {
-                    this.list.push(tmp)
-                    counter++
-                }
             }
-        }
 
-        /*#Post rocessing in case of Youtube playlist URL.   
-        this.load_youtube_postprocessor(filename, mediaitem, proxy) */
-                    
-        return 0
-    }
-    
-    /*--------------------------------------------------------------------
-    # Description: Loads a OPML file.
-    # Parameters : filename=URL or local file
-    #              mediaitem=CMediaItem object to load    
-    # Return     : 0=succes, 
-    #              -1=invalid playlist version, 
-    #              -2=could not open playlist
-    /*------------------------------------------------------------------*/
-    function CPlaylist_load_opml_10(filename, mediaitem, proxy) {
-        if (filename != '')
-            this.URL = filename
-        else
-            this.URL = mediaitem.URL
-
-        var data = getRemote(this.URL).content
-        
-        //defaults
-        this.version = plxVersion
-        this.background = mediaitem.background
-        this.logo = 'none'
-        if (mediaitem.thumb != 'default')     
-            this.logo = mediaitem.thumb  
-        this.title = ''
-        this.type = 'opml'
-        this.description = ''
-        this.player = mediaitem.player
-        this.playmode = 'default'
-        this.view = 'default'         
-        this.start_index = 0
-        //clear the list
-        this.list.splice(this.list.length)
-        
-        //first process the header
-        var index = data.indexOf('<title>')
-        if (index != -1) {
-            var index2 = data.indexOf('</title>')
-            if (index2 != -1) {
-                value = data.slice(index+7,index2)
-                this.title = value  
-            }
-        }
-        
-        //now process the elements
-        data = data.split('<outline')
-            
-        var counter=0
-        //parse playlist entries 
-        for each (var m in data) {
-            var tmp = new CMediaItem() //create new item
-            //fill the title
-            index = m.indexOf('text=')
-            if (index != -1) {
-                index2 = m.indexOf('"', index+6)
-                if (index2 != -1) {
-                    var value = m.slice(index+6,index2)
-                    tmp.name = value 
-                }
-            }
-            
-            index = m.indexOf('image=')
-            if (index != -1) {
-                index2 = m.indexOf('"', index+7)
-                if (index2 != -1) {
-                    value = m.slice(index+7,index2)
-                    tmp.thumb= value
+            for (var v in this.NIPL.vars) {
+                if (v && typeof v == 'string' && v[0] === 'v' && parseInt(v.slice(1)) != NaN) {
+                    this.report_val("report_val " + v + "='" + this.NIPL.vars[v]);
                 }
             }
 
-            index = m.indexOf('bitrate=')
-            if (index != -1) {
-                index2 = m.indexOf('"', index+9)
-                if (index2 != -1) {
-                    value = m.slice(index+9,index2)
-                    tmp.infotag= value
-                }
-            }
-            
-            index = m.indexOf('URL=')
-            if (index != -1) {
-                index2 = m.indexOf('"', index+5)
-                if (index2 != -1) {
-                    value = m.slice(index+5,index2)
-                    tmp.URL= value  
-                }
-            }
-            
-            index = m.indexOf('type=')
-            if (index != -1) {
-                index2 = m.indexOf('"', index+6)
-                if (index2 != -1) {
-                    value = m.slice(index+6,index2)
-
-                    if (value == "link") {
-                        tmp.type = 'opml'
-                        if ((tmp.thumb == 'default') && (this.logo != 'none'))
-                            tmp.thumb = this.logo
-                    }
-                    else if (value == 'audio')                   
-                        tmp.type = 'audio'
-                    else                    
-                        tmp.type = 'video'
-                }
-            }
-        
-            if (tmp.name != "")
-                this.list.push(tmp)
+            this.NIPL.vars['s_referer'] = '';
+            this.NIPL.vars['s_cookie'] = '';
+            //this.NIPL.vars['s_headers'] = {};
+            this.NIPL.vars['s_postdata'] = '';
+            this.NIPL.vars['s_method'] = 'get';
+            this.NIPL.vars['s_action'] = 'read';
         }
-                                  
-        return 0
-    }
     
-//-------------------------------- CMediaItem ----------------------------------------------------------------
+        this.unescape = function(line) { 
+            var params = line.split(' ');
+
+            showtime.trace('Proc debug unescape:');
+            showtime.print('old: ' + this.NIPL.vars[params[1]]);
+
+            this.NIPL.vars[params[1]] = unescape(this.NIPL.vars[params[1]]);
+
+            showtime.print('new: ' + this.NIPL.vars[params[1]]);
+        }
     
-/*--------------------------------------------------------------------
-# Description: Playlist item class. 
-######################################################################
-#class CMediaItem:
-#    def __init__(this, id='0', type='unknown', version=plxVersion, name='', thumb='default', URL=''):
-#        this.id = id        #identifier
-#        this.type = type    #type (playlist, image, video, audio, text)
-#        this.version = version #playlist version
-#        this.name = name    #name as displayed in list view
-#        this.thumb = thumb  #URL to thumb image or 'default'
-#        this.URL = URL      #URL to playlist entry
-/*------------------------------------------------------------------*/
-function CMediaItem() 
-{
-    this.type='unknown'; //(required) type (playlist, image, video, audio, text)
-    this.version=plxVersion; //(optional) playlist version
-    this.name=''; //(required) name as displayed in list view
-    this.description=''; //(optional) description of this item
-    this.date=''; //(optional) release date of this item (yyyy-mm-dd)
-    this.thumb='default'; //(optional) URL to thumb image or 'default'
-    this.icon='default'; //(optional) URL to icon image or 'default'
-    this.URL=''; //(required) URL to playlist entry
-    this.DLloc=''; //(optional) Download location
-    this.player='default'; //(optional) player core to use for playback
-    this.processor=''; //(optional) URL to mediaitem processing server
-    this.playpath=''; //(optional) 
-    this.swfplayer=''; //(optional)
-    this.pageurl=''; //(optional)
-    this.background='default'; //(optional) background image
-    this.rating=''; //(optional) rating value
-    this.infotag='';
-    this.view='default'; //(optional) List view option (list, panel)
-    
-    this.GetType = CMediaItem_GetType;
-}
-               
-    /*--------------------------------------------------------------------
-    # Description: Get mediaitem type.
-    # Parameters : field: field to retrieve (type or attributes)
-    # Return     : -
-    /*------------------------------------------------------------------*/
-    function CMediaItem_GetType(field)
-    {
-        var index = this.type.indexOf(':');
-        var value = '';
-        if (index != -1)
-        {
-            if (field == 0)
-                value = this.type.slice(0,index);
-            else if (field == 1)
-                value = this.type.slice(index+1, this.type.length);
-        }
-        else
-        {
-            if (field == 0)
-                value = this.type;
-            else if (field == 1)
-                value = '';
-        }
-        return value;
-    }
+        this.verbose = function(line) { 
+            var params = line.split(' ');
 
-
-/*--------------------------------------------------------------------
-# Description: Text viewer
-/*------------------------------------------------------------------*/
-function CServer() {
-    //public member of CServer class.
-    this.user_id = '';
-    
-    this.login = CServer_login;
-    this.is_user_logged_in = CServer_is_user_logged_in;
-    
-    //this.login();
-}
-
-    /*--------------------------------------------------------------------
-    # Description: -
-    # Parameters : -
-    # Return     : -
-    /*------------------------------------------------------------------*/            
-    function CServer_login() {
-        if(this.is_user_logged_in())      
-            return false;    
-        
-        var reason = "Login required";    
-        var do_query = false;    
-        while(1) {      
-            var credentials = plugin.getAuthCredentials("Navi-X",	
-            reason, do_query);          
-            
-            if(!credentials) {	
-                if(!do_query) {	  
-                    do_query = true;	  
-                    continue;	
-                }	
-                return "No credentials";      
-            }      
-            if(credentials.rejected)	
-                return "Rejected by user";      
-            var v = showtime.httpPost("http://navix.turner3d.net/login/", {	
-                username: credentials.username,	password: credentials.password      
-            });            
-            var doc = v.toString();            
-            if(doc == '') {	
-                reason = 'Login failed, try again';	
-                continue;      
-            }      
-            showtime.trace('Logged in to Navi-X as user: ' + credentials.username);
-            this.user_id = v.toString();
-            return false;    
-        }
-    }    
-    
-    /*--------------------------------------------------------------------
-    # Description: -
-    # Parameters : -
-    # Return     : -
-    /*------------------------------------------------------------------*/             
-    function CServer_is_user_logged_in() {
-        if (this.user_id != '')
-            return true;  
-        return false;
-    }
-    
-    /*----------------------------------------------------------------
-# Description: Retrieve remote information.
-# Parameters : URL, retrieval parameters
-# Return     : string containing the page contents;
-/*------------------------------------------------------------------*/  
-function getRemote(url,args){
-    var ke= '';
-    var oret;
-    var rdefaults={
-        'agent' : 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.9.0.4) Gecko/2008102920 Firefox/3.0.4',
-        'referer': '',
-        'cookie': '',
-        'method': 'get',
-        'action': 'read',
-        'postdata': '',
-        'headers': {}
-    }
-
-    args=rdefaults;
-    /*if (url.indexOf(nxserver_URL) != -1){
-        if (args['cookie']>'')
-            args['cookie']=args['cookie']+'; ';
-        args['cookie']=args['cookie']+'; nxid='+nxserver.user_id;
-    }*/
-    try{
-        var hdr={'User-Agent':args['agent'], 'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8', 'Referer':args['referer'], 'Cookie':args['cookie']};
-    }
-    catch(err){
-        showtime.trace("Unexpected error: "+err);
-    }
-    for (ke in args['headers']){
-        try{
-            hdr[ke]=args['headers'][ke];
-        }
-        catch(err){
-            showtime.trace("Unexpected error: " + err);
-        }
-    }
-    var req="";
-    try{
-        if (args['method'] == 'get') {
-            req=showtime.httpGet(url, null, hdr);
-        }
-        else {
-            req=showtime.httpPost(url, args['postdata'], null, hdr).toString();
-        }
-        
-        var response=req.toString();
-        
-        var cookies={};
-        
-        oret={
-      	    'headers':req.headers,
-      	    'geturl':url,
-      	    'cookies':cookies
-        }
-        
-        if (args['action'] == 'read')
-            oret['content']=response;
-        
-        var rkeys=['content','geturl'];
-        var rkey='';
-        for (rkey in rkeys){
-            try{
-                oret[rkey];
-            }
-            catch(err){
-                oret[rkey]='';
-            }
-        }
-        rkeys=['cookies','headers'];
-        for (rkey in rkeys){
-            try{
-                oret[rkey];
-            }
-            catch(err){
-                oret[rkey]={};
-            }
-        }
-    }
-    catch(err){     
-        showtime.trace("Unknown error occurred: "+url+', '+err);
-        oret = {
-            'content': '',
-      	    'headers':'',
-      	    'geturl':'',
-      	    'cookies':''
-        }
-    }
-    return oret;
-}
-
-
-/*####################################################################
-# Description: This class is used to create the variable dictionary
-#              object used by NIPL. Its primary purpose is to allow
-#              querying dictionary elements which don't exist without
-#              crashing Python, although a comple of methods have been
-#              added for initializing and resetting the object.
-#              
-# Parameters : URL=source URL
-# Return     : 0=successful, -1=fail
-####################################################################*/
-function NIPLVars() {
-    this.defaults = NIPLVars_defaults;
-    this.reset = NIPLVars_reset;
-    
-    this.data=this.defaults();
-
-    function NIPLVars_defaults() {
-        return {
-            'htmRaw':'',
-            's_url':'',
-            'regex':'',
-            's_method':'get',
-            's_action':'read',
-            's_agent':'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.9.0.4) Gecko/2008102920 Firefox/3.0.4',
-            's_referer':'',
-            's_cookie':'',
-            's_postdata':'',
-            'url':'',
-            'swfplayer':'',
-            'playpath':'',
-            'agent':'',
-            'pageurl':'',
-            'app':'',
-            'swfVfy':'',
-            'nookie_expires':'0'
-        }
-    }
-
-    function NIPLVars_reset(rtype) {
-        if (!rtype)
-            rtype = "";
-        var v_defaults=this.defaults();
-        if (rtype=="scrape") {
-            var reset_entries = ['s_method','s_action','s_agent','s_referer','s_cookie','s_postdata'];
-            for each (var ke in reset_entries)
-                this.data[ke]=v_defaults[ke];
-        }
-        else if (rtype=="hard")
-            this.data=this.defaults();
-        else {
-            for (ke in v_defaults)
-                this.data[ke]=v_defaults[ke];
-        }
-    }
-}
-
-
-function CURLLoader() {
-    this.urlopen = CURLLoader_urlopen;
-    this.geturl_processor = CURLLoader_geturl_processor;
-    
-    function CURLLoader_urlopen(URL, mediaitem) {
-        result = 0 //successful
-
-        if (mediaitem.processor != '')
-            result = this.geturl_processor(mediaitem); 
-        else if (URL.indexOf('http://www.youtube.com') != -1) {
-            mediaitem.processor = "http://navix.turner3d.net/proc/youtube";
-            result = this.geturl_processor(mediaitem);
-        }
-        else
-            video_link = unescape(URL);
-        
-        return result;
-    }
-    
-    
-    function CURLLoader_geturl_processor(mediaitem) {
-        /*cache_filename=procCacheDir + ProcessorLocalFilename(mediaitem.processor)
-        is_cached=False*/
-        var proc_ori="";
-        var htmRaw="";
-        /*if cache_filename>"" and os.path.exists(cache_filename):
-            # use cached processor if no older than 24 hours
-            if os.path.getmtime(cache_filename) + 60*60*24 > time.mktime(time.gmtime()):
-                try:
-                    htmRaw=open(cache_filename, 'r').read()
-                    is_cached=True
-                    print "Processor: phase 1 - query\n URL: "+mediaitem.URL+"\n Processor (cached): "+mediaitem.processor
-                except IOError:
-                    pass
-        */
-
-        if (htmRaw=="") {
-            showtime.trace("Processor: phase 1 - query\n URL: "+mediaitem.URL+"\n Processor: "+mediaitem.processor);
-            htmRaw=getRemote(mediaitem.processor+'?url='+escape(mediaitem.URL),{'cookie':'version=0.1; platform=showtime'})['content']
-            proc_ori=htmRaw
+            this.verbose = parseInt(params[1]);
         }
 
-        if (htmRaw <= '') {
-            showtime.trace("Processor error: nothing returned from learning phase");
-            return -1
-        }
-        
-        if (htmRaw.slice(0,2)=='v2') {
-            htmRaw=htmRaw.slice(3)
-            var inst=htmRaw
-            htmRaw=''
-            var phase=0
-            var exflag=false
-            var phase1complete=false
-            var verbose=service.processorDebug;
-            var proc_args=''
-            var inst_prev=''
-            var headers={}
-
-            var v=new NIPLVars()
-
-            // command parser
-            var lparse=new RegExp('^([^ =]+)([ =])(.+)')
-
+        this.ifResult = function(line) { 
             // condition parser
             var ifparse=new RegExp(/^([^<>=!]+)\s*([!<>=]+)\s*(.+)$/);
+            var params = ifparse.exec(line);
 
-            // dot property parser
-            var dotvarparse=new RegExp(/^(nookies|s_headers)\.(.+)$/);
+            if (params && params[2] && params[2] != '!') {
+                var key = params[1].slice(params[1].indexOf(' ') + 1);
+                var keys = '';
+                var value = params[3];
+                var result = false;
 
-            /*nookies=NookiesRead(mediaitem.processor)
-            for ke in nookies:
-                hkey='nookies.'+ke
-                v.data[hkey]=nookies[ke]['value']*/
+                if (value[0] == "'")
+                    value = value.slice(1);
+                else
+                    value = this.NIPL.vars[value];
 
-            while (exflag==false) {
-                var scrape=1
-                phase=phase+1
-                var rep={}
+                var oper = params[2];
+                if (oper === '=')
+                    oper = '==';
 
-                var if_satisfied=false
-                var if_next=false
-                var if_end=false
+                if (oper === '<>')
+                    oper = '!=';
 
-                var src_printed=false
+                var els = key.split('.');
+                if (els.length > 1) {
+                    keys = "['";
+                    for (var i = 0; i < els.length; i++) {
+                        var el = els[i];
+                        keys += el + "']";
+                        if (i < els.length - 1)
+                            keys += "['";
+                    }
 
-                // load defaults into v, leave undefined keys alone
-                v.reset()
-
-                // get instructions if args present
-                if (proc_args>'') {
-                    showtime.trace("Processor: phase "+phase+" learn");
-                    inst=getRemote(mediaitem.processor+'?'+proc_args)['content']
-                    proc_args=''
+                    result = eval("this.NIPL.vars" + keys + oper + "'" + value + "'");
                 }
-                else if (phase1complete) {
-                    showtime.trace("Processor error: nothing to do");
-                    exflag=true
+                else {
+                    if (!this.NIPL.vars[key])
+                        this.NIPL.vars[key] = "";
+
+                    result = eval("this.NIPL.vars['" + key + "']" + oper + "'" + value + "'");
+                }
+
+                showtime.trace('Proc debug if => ' + result + ':');
+                showtime.print('test: ' + key + ' ' + oper + ' ' + params[3]);
+                if (this.NIPL.vars[key]) {
+                    showtime.print('left: ' + this.NIPL.vars[key]);
+                    showtime.print('right: ' + value);
+                }
+            }
+            else {
+                var params = line.split(' ');
+                var exist = false;
+                if (this.NIPL.vars[params[1]])
+                    exist = true;
+
+                result = exist;
+
+                showtime.trace('Proc debug if => ' + result + ':');
+                if (this.NIPL.vars[params[1]])
+                    showtime.print(params[1] + " > '': " + this.NIPL.vars[params[1]]);
+                else
+                    showtime.print(params[1] + " = ''");
+            }
+
+            return result;
+        }
+
+        this.getVariableValue = function(key) {
+            try {
+                var keys = "['" + key + "']";
+                if (key.indexOf('.') != -1) {
+                    keys = '';
+                    for each (var k in key.split('.')) {
+                    keys +="['" + k + "']";
+                    }
+                }
+
+                var value = eval('this.NIPL.vars' + keys);
+                return value;
+            }
+            catch(ex) { return ''; }
+        };
+
+        this.setVariableValue = function(line) { 
+            var regex = new RegExp('^([^=]+)([=])(.+)');
+            var params = regex.exec(line);
+
+            var key = params[1];
+            var value = params[3];
+
+            if (value[0] == "'") {
+                value = value.slice(1);
+
+                showtime.trace('Proc debug variable: ' + key + ' set to string literal');
+                showtime.print(value);
+            }
+            else {
+                showtime.trace('Proc debug variable: ' + key +' set to ' + value);
+
+                if (!this.NIPL.vars[value])
+                    this.NIPL.vars[value] = '';
+                showtime.print(this.NIPL.vars[value]);
+                value = this.NIPL.vars[value];
+            }
+
+            this.NIPL.setValue(key, value);
+        }
+
+        this.getUrl = function(page, mediaitem, args) {
+            var message = '';
+
+            var if_result = false;
+            var if_init = false;
+            var if_end = false;
+            var if_satisfied = false;
+
+            var link = mediaitem.processor + '?';
+
+            var postdata = 'url=' + escape(mediaitem.URL);
+
+            if (args) {
+                for (var el in args) {
+                    if (el == 'phase') postdata += '&' + el + '=' + this.phase;
+                    else postdata += '&' + el + '=' + escape(args[el]);
+                }
+            }
+
+            link += postdata;
+            showtime.print(link);
+            this.NIPL.vars['s_postdata'] = postdata;
+
+            if (this.phase > 1)
+                this.NIPL.vars['s_method'] = 'post';
+
+            var data = this.downloader.getRemote(link, args);
+
+            if (data.error || data.response == '') {
+                var end = new Date();
+                var time = end - init;
+
+                if (data.error) {
+                    message = ex + ' (' + time + 'ms)';
+                }
+                if (data.response == '') {
+                    message = 'The processor for this video is empty' + ' (' + time + 'ms)';
+                }
+
+                var result = {
+                    error: true,
+                    message: message
+                };
+                return result;
+            }
+
+            data = data.response;
+
+            if (this.phase == 1) {
+                var version = data.slice(0, 2);
+                showtime.trace('Processor: phase 1 - query');
+                showtime.print('URL: ' + mediaitem.URL);
+                showtime.print('Processor: ' + mediaitem.processor);
+            }
+
+            if (this.phase > 1 || version == "v2") {
+                var lines = data.split('\n');
+
+                for (var i = 0; i < lines.length; i++) {
+                    if (this.haveVideoUrl && !this.error) {
+                        break;
+                    }
+                    else if (this.error && this.message != '') {
+                        break;
+                    }
+
+                    var line = lines[i].replace(/^\s*/, '').replace(/\s\s*$/, '');
+                    if (line.slice(0,1) == '#' || line.slice(0,2) == '//' || line == '')
+                        continue;
+
+                    showtime.trace('Processor Line #' + i + ': ' + line);
+
+                    var lparse=new RegExp('^([^ =]+)([ =])(.+)');
+                    var match = lparse.exec(line);
+
+                    if (if_init && if_satisfied && line != 'endif')
+                        continue;
+                    if (if_init && !if_result && !if_end && line != 'else' && line != 'endif' && line.indexOf('elseif') == -1) {
+                        continue;
+                    }
+                    else if (line == 'endif') {
+                        if_init = false;
+                        if_end = false;
+                        if_result = false;
+                        if_satisfied = false;
+                    }
+                    else if (line == 'else' && !if_result) {
+                        showtime.trace('Proc debug else: executing');
+                        if_result = true;
+                    }
+                    else if (line == 'else' || line.indexOf('elseif') != -1 && if_result && if_init) {
+                        if_satisfied = true;
+                        continue;
+                    }
+
+                    if (match && match[2] === "=") {
+                        this.setVariableValue(line);
+                    }
+                    else if (match && match[2] === " ") {
+                        if (match[1] == 'concat') {
+                            this.concat(line);
+                        }
+                        else if (match[1] == 'debug') {
+                            this.debug(line);
+                        }
+                        else if (match[1] == 'countdown') {
+                            this.countdown(line);
+                        }
+                        else if (match[1] == 'error') {
+                            this.error(line);
+                        }
+                        else if (match[1] == 'escape') {
+                            this.escape(line);
+                        }
+                        else if (match[1] == 'debug') {
+                            this.debug(line);
+                        }
+                        else if (match[1] == 'match') {
+                            this.match(line);
+                        }
+                        else if (match[1] == 'print') {
+                            this.print(line);
+                        }
+                        else if (match[1] == 'report_val') {
+                            this.report_val(line);
+                        }
+                        else if (match[1] == 'replace') {
+                            this.replace(line);
+                        }
+                        else if (match[1] == 'unescape') {
+                            this.unescape(line);
+                        }
+                        else if (match[1] == 'verbose') {
+                            this.verbose(line);
+                        }
+                        else if (match[1] === 'if' || match[1] === 'elseif') {
+                            var result = this.ifResult(line);
+                            if_init = true;
+                            if_result = result;
+                        }
+                        else {
+                            showtime.trace('Processor: Unknown function');
+                        }
+                    }
+                    else if (line.indexOf(' ') == -1) {
+                        if (line.slice(0, 7) == 'report') {
+                            return this.report(page);
+                        }
+                        else if (line.slice(0,4) == 'play') {
+                            return this.play();
+                        }
+                        if (line.slice(0,6) == 'scrape') {
+                            this.scrape();
+                        }
+                    }
+                }
+            }
+            else {
+                // proc v1
+
+                var result = {
+                    error: false,
+                    message: ''
+                };
+
+                var arr = data.split('\n');
+                if (arr.length < 1) {
+                    result.error = true;
+                    result.message = "Processor error: nothing returned from learning phase";
+                    return result;
+                }
+                var URL = arr[0];
+                if (URL.indexOf('error') != -1) {
+                    result.error = true;
+                    result.message = "Processor: " + URL;
+                    return result;
+                }
+                report = "Processor: phase 2 - instruct\n URL: " + URL;
+                if (arr.length < 2) {
+                    this.NIPL.vars['videoUrl'] = URL;
+                    result.error = false;
+                    result.message = "Processor: single-line processor stage 1 result\n playing " + URL;
+                    result.video = this.NIPL.vars['videoUrl'];
+
+                    return result;
+                }
+                var filt = arr[1];
+                report = report + "\n filter: " + filt;
+                if (arr.length > 2) {
+                    var ref = arr[2];
+                    var report = report + "\n referer: " + ref;
                 }
                 else
-                    v.data['s_url']=mediaitem.URL
-
-                if (inst==inst_prev) {
-                    showtime.trace("Processor error: endless loop detected");
-                    return -1
+                    ref = '';
+                if (arr.length > 3) {
+                    var cookie = arr[3];
+                    report = report + "\n cookie: " + cookie;
                 }
+                else
+                    cookie='';
 
-                inst_prev=inst
-                var lines=inst.split("\n");
-                if (lines.length < 1) {
-                    showtime.trace("Processor error: nothing returned from phase "+phase);
-                    return -1
-                }
-                var linenum=0
-                
-                for each (var line in lines) {
-                    linenum=linenum+1
-                    line=line.replace(/^\s*/, '').replace(/\s\s*$/, '');
-
-                    if (verbose>0 && src_printed==false) {
-                        showtime.trace("Processor NIPL source:\n"+inst);
-                        src_printed=true
-                    }
-
-                    if (line>'' && verbose>1) {
-                        var noexec=''
-                        if (if_next || if_end)
-                            noexec=' (skipped)'
-                        var str_report="NIPL line "+linenum+noexec+": "+line
-                        if (verbose>2 && (if_next || if_satisfied || if_end))
-                            str_report=str_report+"\n (IF: satisfied="+if_satisfied+", skip to next="+if_next+", skip to end="+if_end+")"
-                        showtime.trace(str_report);
-                    }
-
-                    // skip comments and blanks
-                    if (line.slice(0,1)=='#' || line.slice(0,2)=='//' || line=='')
-                        continue
-
-                    if (if_end && line!='endif')
-                        continue
-
-                    if (if_next && line.slice(0,5)!='elseif' && line!='else' && line!='endif')
-                        continue
-
-                    if (line=='else') {
-                        if (if_satisfied)
-                            if_end=true
-                        else {
-                            if_next=false
-                            if (verbose>0)
-                                showtime.trace("Proc debug else: executing");
-                        }
-                        continue
-                    }
-
-                    else if (line=='endif') {
-                        if_satisfied=false
-                        if_next=false
-                        if_end=false
-                        continue
-                    }
-
-                    else if (line=='scrape') {
-                        var str_info="Processor:"
-                        if (phase>1)
-                            str_info=str_info+" phase "+phase
-                        str_info=str_info+" scrape"
-                        if (scrape>1)
-                            str_info=str_info+" "+scrape
-                        if (v.data['s_url']=='') {
-                            showtime.trace("Processor error: no scrape URL defined");
-                            return -1
-                        }
-                        scrape=scrape+1
-                        var scrape_args={
-                          'referer': v.data['s_referer'],
-                          'cookie': v.data['s_cookie'],
-                          'method': v.data['s_method'],
-                          'agent': v.data['s_agent'],
-                          'action': v.data['s_action'],
-                          'postdata': v.data['s_postdata'],
-                          'headers': headers
-                        }
-                        showtime.trace("Processor "+v.data['s_method'].toUpperCase()+"."+v.data['s_action']+": "+v.data['s_url']);
-                        if (verbose>0) {
-                            showtime.trace("Proc debug remote args:");
-                            showtime.trace(scrape_args);
-                        }
-                        var remoteObj=getRemote(v.data['s_url'], scrape_args)
-
-
-                        v.data['htmRaw']=remoteObj['content']
-                        v.data['geturl']=remoteObj['geturl']
-                        // backwards-compatibility for pre 3.5.4 (XBMC)
-                        if (v.data['s_action']=='geturl')
-                            v.data['v1']=v.data['geturl']
-                        var str_out="Proc debug headers:"
-                        for (var ke in remoteObj['headers']) {
-                            var hkey='headers.'+ke
-                            str_out=str_out+"\n "+ke+": "+remoteObj['headers'][ke]
-                            v.data[hkey]=remoteObj['headers'][ke]
-                        }
-                        if (verbose>0)
-                            showtime.trace(str_out);
-
-                        /*str_out="Proc debug cookies:"
-                        for ke in remoteObj['cookies']:
-                            hkey='cookies.'+ke
-                            str_out=str_out+"\n "+ke+": "+str(remoteObj['cookies'][ke])
-                            v.data[hkey]=str(remoteObj['cookies'][ke])
-                        if verbose>0:
-                            print str_out*/
-/*
-#                        if v.data['s_action']=='headers':
-#                            headers=remoteObj
-#                            str_out="Proc debug headers:"
-#                            for ke in headers:
-#                                str_out=str_out+"\n "+ke+": "+str(headers[ke])
-#                                v.data[ke]=str(headers[ke])
-#                            if verbose>0:
-#                                print str_out
-#                        elif v.data['s_action']=='geturl':
-#                            v.data['v1']=remoteObj
-#                        else:
-#                            v.data['htmRaw']=remoteObj
-                        */
-showtime.print(v.data['s_action'])
-                        if (v.data['s_action']=='read' && v.data['regex']>'' && v.data['htmRaw']>'') {
-                            // get finished - run regex, populate v(alues) and rep(ort) if regex is defined
-                            v.data['nomatch']=''
-                            rep['nomatch']=''
-                            for (var i=1; i<=11; i++) {
-                                ke='v'+i
-                                v.data[ke]=''
-                                rep[ke]=''
-                            }
-                            var p=new RegExp(v.data['regex'])
-                            match=p.exec(v.data['htmRaw'])
-                            showtime.print(match)
-                            if (match) {
-                                var rerep='Processor scrape:';
-                                for (i=1; i < match.length; i++) {
-                                    val=match[i]
-                                    var key='v'+i
-                                    rerep=rerep+"\n "+key+'='+val
-                                    rep[key]=val
-                                    v.data[key]=val
-                                }
-                                if (verbose>0)
-                                    showtime.trace(rerep);
-                            }
-
-                            else {
-                                if (verbose>0)
-                                    showtime.trace('Processor scrape: no match');
-                                rep['nomatch']=1
-                                v.data['nomatch']=1
-                            }
-                        }
-
-                        // reset scrape params to defaults
-                        v.reset('scrape')
-                    }
-
-                    else if (line=='play') {
-                        if (verbose>=1)
-                            showtime.trace("Proc debug: play");
-                        exflag=true
-                        break
-                    }
-
-                    else if (line=='report') {
-                        rep['phase']=phase
-                        proc_args=escape(rep)
-                        //proc_args=re.sub('v\d+=&','&',proc_args)
-                        proc_args=proc_args.replace('v\d+=&','&')
-                        proc_args=proc_args.replace('nomatch=&','&')
-                        /*proc_args=re.sub('&+','&',proc_args)
-                        proc_args=re.sub('^&','',proc_args)*/
-                        proc_args=proc_args.replace('&+','&')
-                        proc_args=proc_args.replace('^&','')
-                        str_report="Processor report:"
-                        for (ke in rep) {
-                            if (rep[ke]>'')
-                                str_report=str_report+"\n "+ke+": "+rep[ke]
-                        }
-                        showtime.trace(str_report);
-                        break
-                    }
-
-                    else {
-                        // parse
-                        var match=lparse.exec(line)
-                        if (!match) {
-                            showtime.trace("Processor syntax error: "+line);
-                            return -1
-                        }
-                        var subj=match[1]
-                        var arg=match[3]
-                        
-                        if (subj=='if' || subj=='elsif') {
-                            if (if_satisfied)
-                                if_end=true
-                            else {
-
-                                // process if / elseif operators
-                                match=ifparse.exec(arg)
-                                if (match) {
-                                    // process if with operators
-                                    var lkey=match[1]
-                                    var oper=match[2]
-                                    var rraw=match[3]
-                                    if (oper=='=')
-                                        oper='=='
-                                    if (rraw.slice(0,1)=="'")
-                                        var rside=rraw.slice(1)
-                                    else
-                                        rside=v.data[rraw]
-                                    var bool=eval("v.data[lkey]"+oper+"rside")
-                                    var if_report=" test: "+lkey+" "+oper+" "+rraw+"\n  left: "+v.data[lkey]+"\n right: "+rside
-                                }
-
-                                else {
-                                    // process single if argument for >''
-                                    bool=v.data[arg]>''
-                                    if_report=arg
-                                    if (bool)
-                                        if_report=if_report+" > "
-                                    else
-                                        if_report=if_report+" = "
-                                    if_report=if_report+"'': "+v.data[arg]
-                                }
-                            }
-
-                            if (bool) {
-                                if_satisfied=true
-                                if_next=false
-                            }
-                            else
-                                if_next=true
-
-                            if (verbose>0)
-                                showtime.trace("Proc debug "+subj+" => "+bool+":\n "+if_report);
-                            continue
-                        }
-
-                        if (match[2]=='=') {
-                            // assignment operator
-                            if (arg.slice(0,1)=="'") {
-                                var val=arg.slice(1);
-                                var areport="string literal"
-                            }
-                            else {
-                                val=v.data[arg]
-                                areport=arg
-                            }
-
-                            match=dotvarparse.exec(subj);
-                            if (match) {
-                                var dp_type=match[1]
-                                var dp_key=match[2]
-                                var tsubj=dp_key
-                                /*if (dp_type=='nookies') {
-                                    # set nookie
-                                    treport="nookie"
-                                    NookieSet(mediaitem.processor, dp_key, val, v.data['nookie_expires'])
-                                    v.data[subj]=val
-                                }*/
-
-                                if (dp_type=='s_headers') {
-                                    // set scrape header
-                                    var treport="scrape header"
-                                    headers[dp_key]=val
-                                }
-                            }
-
-                            else {
-                                // set variable
-                                treport="variable"
-                                tsubj=subj
-                                v.data[subj]=unescape(val)
-                            }
-
-                            if (verbose>0)
-                                showtime.trace("Proc debug "+treport+": "+tsubj+" set to "+areport+"\n "+val);
-                        }
-
-                        else {
-                            // do command
-                            if (subj=='verbose')
-                                verbose=parseInt(arg)
-
-                            else if (subj=='error') {
-                                showtime.trace("Processor error: "+arg.slice(1));
-                               	return -1
-                            }
-
-                            else if (subj=='report_val') {
-                                match=lparse.exec(arg)
-                                if (!match) {
-                                    showtime.trace("Processor syntax error: "+line);
-                                    return -1
-                                }
-                                ke=match[1]
-                                va=match[3]
-                                if (va.slice(0,1)=="'") {
-                                    rep[ke]=va.slice(1)
-                                    if (verbose>0)
-                                        showtime.trace("Proc debug report value: "+ke+" set to string literal\n "+va.slice(1));
-                                }
-                                else {
-                                    rep[ke]=v.data[va]
-                                    if (verbose>0)
-                                        showtime.trace("Proc debug report value: "+ke+" set to "+va+"\n "+v.data[va]);
-                                }
-                            }
-
-                            else if (subj=='concat') {
-                                match=lparse.exec(arg)
-                                if (!match) {
-                                    showtime.trace("Processor syntax error: "+line);
-                                    return -1
-                                }
-                                ke=match[1]
-                                var va=match[3]
-                                var oldtmp=v.data[ke]
-                                if (va.slice(0,1)=="'")
-                                    v.data[ke]=v.data[ke]+va.slice(1)
-                                else
-                                    v.data[ke]=v.data[ke]+v.data[va]
-                                if (verbose>0)
-                                    showtime.trace("Proc debug concat:\n old="+oldtmp+"\n new="+v.data[ke]);
-                            }
-
-                            else if (subj=='match') {
-                                v.data['nomatch']=''
-                                rep['nomatch']=''
-                                for (i=1; i<=11;i++) {
-                                    ke='v'+i
-                                    v.data[ke]=''
-                                    rep[ke]=''
-                                }
-                                p=new RegExp(v.data['regex'])
-                                try {
-                                    match=p.exec(unescape(v.data[arg]))
-                                }
-                                catch(err) {
-                                    v.data['nomatch']=1
-                                }
-
-                                if (match) {
-                                    rerep='Processor match '+arg+':';
-                                    for (i=1; i < match.length; i++) {
-                                        val=match[i]
-                                        key='v'+i
-                                        rerep=rerep+"\n "+key+'='+val
-                                        v.data[key]=val
-                                    }
-                                    if (verbose>0)
-                                        showtime.trace(rerep);
-                                }
-
-                                else {
-                                    if (verbose>0)
-                                        showtime.trace("Processor match: no match\n regex: "+v.data['regex']+"\n search: "+v.data[arg]);
-                                    v.data['nomatch']=1
-                                }
-                            }
-
-                            else if (subj=='replace') {
-                               // pre-set regex, replace var [']val
-                                match=lparse.exec(arg)
-                                if (!match) {
-                                    showtime.trace("Processor syntax error: "+line);
-                                    return -1
-                                }
-                                ke=match[1]
-                                va=match[3]
-                                if (va.slice(0,1)=="'")
-                                    va=va.slice(1);
-                                else
-                                    va=v.data[va]
-                                oldtmp=v.data[ke]
-                                v.data[ke]=v.data[ke].toString().replace(v.data['regex'], va);
-                                if (verbose>0)
-                                    showtime.trace("Proc debug replace "+ke+":\n old="+oldtmp+"\n new="+v.data[ke]);
-                            }
-
-                            else if (subj=='unescape') {
-                                oldtmp=v.data[arg]
-                                v.data[arg]=escape(v.data[arg])
-                                if (verbose>0)
-                                    showtime.trace("Proc debug unescape:\n old="+oldtmp+"\n new="+v.data[arg]);
-                            }
-
-                            else if (subj=='escape') {
-                                oldtmp=v.data[arg]
-                                v.data[arg]=escape(v.data[arg])
-                                if (verbose>0)
-                                    showtime.trace("Proc debug escape:\n old="+oldtmp+"\n new="+v.data[arg]);
-                            }
-
-                            else if (subj=='debug') {
-                                if (verbose>0) {
-                                    try {
-                                        showtime.trace("Processor debug "+arg+":\n "+v.data[arg]);
-                                    }
-                                    catch (err) {
-                                        showtime.trace("Processor debug "+arg+" - does not exist\n");
-                                    }
-                                }
-                            }
-
-                            else if (subj=='print') {
-                                if (arg.slice(0,1)=="'")
-                                    showtime.trace("Processor print: "+arg.slice(1));
-                                else
-                                    showtime.trace("Processor print "+arg+":\n "+v.data[arg]);
-                            }
-                            
-                            else {
-                                showtime.trace("Processor error: unrecognized method '"+subj+"'");
-                                return -1
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (v.data['agent']>'')
-                v.data['url']=v.data['url']+'?|User-Agent='+v.data['agent']
-            mediaitem.URL=v.data['url']
-            if (v.data['playpath']>'' || v.data['swfplayer']>'') {
-                mediaitem.URL=mediaitem.URL+' tcUrl='+v.data['url']
-                if (v.data['app']>'')
-                    mediaitem.URL=mediaitem.URL+' app='+v.data['app']
-                if (v.data['playpath']>'')
-                    mediaitem.URL=mediaitem.URL+' playpath='+v.data['playpath']
-                if (v.data['swfplayer']>'')
-                    mediaitem.URL=mediaitem.URL+' swfUrl='+v.data['swfplayer']
-                if (v.data['pageurl']>'')
-                    mediaitem.URL=mediaitem.URL+' pageUrl='+v.data['pageurl']
-                if (v.data['swfVfy']>'')
-                    mediaitem.URL=mediaitem.URL+' swfVfy='+v.data['swfVfy']
-            }
-
-            else {
-                mediaitem.swfplayer=v.data['swfplayer']
-                mediaitem.playpath=v.data['playpath']
-                mediaitem.pageurl=v.data['pageurl']
-            }
-
-            mediaitem.processor=''
-
-            /*## cache
-            if v.data['cacheable']>'' and not is_cached:
-                f=open(cache_filename, 'w')
-                f.write(proc_ori)    
-                f.close()
-                print "Processor cached as " + cache_filename*/
-            
-        }
-        
-        else {
-            // proc v1
-            var arr=htmRaw.split("\n")
-            if (!arr) {
-                showtime.trace("Processor error: nothing returned from learning phase");
-                return -1
-            }
-            var URL=arr[0]
-            if (URL.indexOf('error')!=-1) {
-                showtime.trace("Processor: "+URL);
-                return -1
-            }
-            report="Processor: phase 2 - instruct\n URL: "+URL
-            if (arr.length < 2) {
-                this.loc_url = URL
-                showtime.trace("Processor: single-line processor stage 1 result\n playing "+URL);
-                return 0
-            }
-            var filt=arr[1]
-            report=report+"\n filter: "+filt
-            if (arr.length > 2) {
-                ref=arr[2]
-                report=report+"\n referer: "+ref
-            }
-            else
-                var ref=''
-            if (arr.length > 3) {
-                var cookie=arr[3]
-                report=report+"\n cookie: "+cookie
-            }
-            else
-                cookie=''
-
-            showtime.trace(report);
-            var htm=getRemote(URL,{'referer':ref,'cookie':cookie})['content']
-            if (htm == '') {
-                showtime.trace("Processor error: nothing returned from scrape");
-                return -1
-            }
-
-            p=new RegExp(filt)
-            match=p.exec(htm)
-            if (match) {
-                var tgt=mediaitem.processor
-                var sep='?'
-                report='Processor: phase 3 - scrape and report'
-                for (i = 1; i < match.length; i++) {
-                    val=escape(match[i])
-                    tgt=tgt+sep+'v'+i+'='+val
-                    sep='&'
-                    report=report+"\n v"+i+": "+val
-                }
                 showtime.trace(report);
-                var htmRaw2=getRemote(tgt)['content']
-                if (htmRaw2<='') {
-                    showtime.trace("Processor error: could not retrieve data from process phase");
-                    return -1
+                this.NIPL.vars['s_cookie'] = cookie;
+                this.NIPL.vars['s_referer'] = ref;
+                var htm = this.downloader.getRemote(URL).response;
+                if (htm == '') {
+                    result.error = true;
+                    result.message = "Processor error: nothing returned from scrape";
+                    return result;
                 }
-                arr=htmRaw2.split("\n")
-                mediaitem.URL=arr[0]
 
-                if (arr[0].indexOf('error')!=-1) {
-                    showtime.trace("Processor: "+arr[0]);
-                    return -1
+                var p = new RegExp(filt);
+                var match = p.exec(htm);
+                if (match) {
+                    var tgt = mediaitem.processor;
+                    var sep = '?';
+                    report = 'Processor: phase 3 - scrape and report';
+                    /*for i in range(1,len(match.groups())+1):
+                    val=urllib.quote_plus(match.group(i))*/
+
+                    for (i in match) {
+                        var val = escape(match[i]);
+
+                        tgt = tgt + sep + 'v' + i + '=' + val;
+                        sep = '&';
+                        report = report + "\n v" + i + ": " + val;
+                    }
+                    showtime.trace(report);
+                    var htmRaw2 = this.downloader.getRemote(tgt).response;
+                    if (htmRaw2<='') {
+                        result.error = true;
+                        result.message = "Processor error: could not retrieve data from process phase";
+                        return result;
+                    }
+                    arr = htmRaw2.split('\n');
+                    mediaitem.URL = arr[0];
+
+                    if (arr[0].indexOf('error') != -1) {
+                        result.error = true;
+                        result.message = "Processor: " + arr[0];
+                        return result;
+                    }
+                    if (arr.length > 1) {
+                        mediaitem.URL = mediaitem.URL + ' tcUrl=' + arr[0] + ' swfUrl=' + arr[1];
+                        if (arr.lenght > 2)
+                            mediaitem.URL = mediaitem.URL + ' playpath=' + arr[2];
+                        if (arr.length > 3)
+                            mediaitem.URL = mediaitem.URL + ' pageUrl=' + arr[3];
+                    }
+                    mediaitem.processor = '';
                 }
-                if (arr.length > 1) {
-                    mediaitem.URL=mediaitem.URL+' tcUrl='+arr[0]+' swfUrl='+arr[1]
-                    if (arr.length > 2)
-                        mediaitem.URL=mediaitem.URL+' playpath='+arr[2]
-                    if (arr.length > 3)
-                        mediaitem.URL=mediaitem.URL+' pageUrl='+arr[3]
+                else {
+                    result.error = true;
+                    result.message = "Processor error: pattern not found in scraped data";
+                    return result;
                 }
-                mediaitem.processor=''
             }
-            else {
-                showtime.trace("Processor error: pattern not found in scraped data");
-                return -1
+
+            var end = new Date();
+            var time = end - init;
+
+            if (!this.NIPL.vars['videoUrl'] && this.message == '') {
+                this.error = true;
+                message = 'Finished processing but there are no results...' + ' (' + time + 'ms)';
+            }
+            else if (this.message != '') {
+                this.error = true;
+                message = this.message;
+            }
+            else
+                message = 'Video succesfully processed' + ' (' + time + 'ms)';
+
+            var result = {
+                error: this.error,
+                message: message,
+                video: this.NIPL.vars['videoUrl']
+            };
+
+            return result;
+        }
+    }
+
+    function Downloader(processor) {
+        this.controls = {
+            'noFollow': false,
+            'debug': false,
+            'headRequest': false
+        };
+
+        this.getRemote = function (filename, args) {
+            var argsVar = {};
+            if (args)
+                argsVar = args;
+            var headers = {};
+
+            if (processor) {
+                if (processor.NIPL.vars['s_agent']) {
+                    headers['User-Agent'] = processor.NIPL.vars['s_agent'];
+                }
+                if (processor.NIPL.vars['s_referer'] && processor.NIPL.vars['s_referer'] != '') {
+                    headers['Referer'] = processor.NIPL.vars['s_referer'];
+                }
+                if (processor.NIPL.vars['s_cookie'] && processor.NIPL.vars['s_cookie'] != '') {
+                    headers['Cookie'] = processor.NIPL.vars['s_cookie'];
+                }
+                if (processor.NIPL.vars['s_headers'].length > 0) {
+                    for (var hdr in processor.NIPL.vars['s_headers'])
+                        headers[hdr] = processor.NIPL.vars['s_headers'][hdr];
+                }
+            }
+
+            var data = '';
+
+            if (processor) {
+                showtime.trace('Processor ' + processor.NIPL.vars['s_method'].toString().toUpperCase() + '.' + processor.NIPL.vars['s_action'] + ': ' + filename);
+                showtime.trace('Proc debug remote args:');
+                showtime.trace("{'postdata': \'" + processor.NIPL.vars['s_postdata'] + "\', 'agent': '" + headers['User-Agent'] + "', 'headers': {}, 'cookie': '" + headers['Cookie'] + "', 'action': '" + 
+                processor.NIPL.vars['s_action'] + "', 'referer': '" + headers['Referer'] + "', 'method': '" + processor.NIPL.vars['s_method'] + "'}");
+            }
+
+            try {
+                if (processor && processor.NIPL.vars['s_method'] === 'get') {
+                    data = showtime.httpGet(filename, argsVar, headers, this.controls);
+                }
+                else if (processor && processor.NIPL.vars['s_method'] === 'post' && processor.NIPL.vars['s_postdata']) {
+                    var arguments = {};
+                    var params = processor.NIPL.vars['s_postdata'].split('&');
+                    for (var i in params) {
+                        var el = params[i];
+                        var params_sub = el.split('=');
+
+                        if (!params_sub[1])
+                            params_sub[1] = '';
+
+                        showtime.print(params_sub[0] + ': ' + unescape(params_sub[1]));
+                        arguments[params_sub[0]] = unescape(params_sub[1]);
+                    }
+
+                    data = showtime.httpPost(filename, arguments, null, headers, this.controls);
+                }
+                else if (processor && processor.NIPL.vars['s_method'] === 'post' && !processor.NIPL.vars['s_postdata']) {
+                    data = showtime.httpPost(filename, argsVar, headers, this.controls);
+                }
+                else
+                    data = showtime.httpGet(filename, argsVar, headers, this.controls);
+
+                var response = data.toString();
+                var headersResponse = data.headers;
+
+                return {
+                    'response': response,
+                    'headers': headersResponse,
+                    'multiheaders': data.multiheaders
+                };
+            }
+            catch (ex) {
+                showtime.trace('Downloader: ' +ex);
+                return {
+                    'response': '',
+                    'headers': {},
+                    'multiheaders': {},
+                    'error': ex
+                };
+            }
+        };
+    }
+
+    function MediaItem() 
+    {
+        this.type='unknown'; //(required) type (playlist, image, video, audio, text)
+        this.version=8; //(optional) playlist version
+        this.name=''; //(required) name as displayed in list view
+        this.description=''; //(optional) description of this item
+        this.date=''; //(optional) release date of this item (yyyy-mm-dd)
+        this.thumb='default'; //(optional) URL to thumb image or 'default'
+        this.icon='default'; //(optional) URL to icon image or 'default'
+        this.URL=''; //(required) URL to playlist entry
+        //this.DLloc=''; //(optional) Download location
+        this.processor=''; //(optional) URL to mediaitem processing server
+        this.playpath=''; //(optional) 
+        this.swfplayer=''; //(optional)
+        this.pageurl=''; //(optional)
+        this.background='default'; //(optional) background image
+        this.rating=''; //(optional) rating value
+        this.infotag='';
+        this.view='default'; //(optional) List view option (list, panel)
+	
+        this.GetType = function(field)
+        {
+            var index = this.type.indexOf(':');
+            var value = '';
+            if (index != -1)
+            {
+                if (field == 0)
+                    value = this.type.slice(0,index);
+                else if (field == 1)
+                    value = this.type.slice(index+1, this.type.length);
+            }
+            else
+            {
+                if (field == 0)
+                    value = this.type;
+                else if (field == 1)
+                    value = '';
+            }
+            return value;
+        }
+    }
+
+    function NIPL(mediaitem) {
+        this.vars = {};
+
+        this.setValue = function(key, value, append) {
+            if (!append || !this.vars[key])
+                this.vars[key] = value;
+            else
+                this.vars[key] += value;
+        };
+
+        this.newVars = function(mediaitem) {
+            this.vars = {
+                // Scraping parameters (remote site data retrieval)
+                's_url': mediaitem.URL,
+                's_method': 'get', // get or post
+                's_action': 'read', // read or headers
+                's_agent': 'Mozilla/5.0 (Windows; U; Windows NT 5.1; en-US; rv:1.9.0.4) Gecko/2008102920 Firefox/3.0.4', // User Agent of a web browser (e.g. Firefox)
+                's_referer': '',
+                's_cookie': '',
+                's_postdata': '', //only if s_method == 'post'
+                's_headers': {},
+
+                // Scrape return data (auto-defined from calling the scrape function)
+                'htmRaw': '', // only if s_action == 'read'
+                'geturl': '', 
+                'headers': {},
+                'cookies': {},
+
+                // Video Playback
+                'url': '',
+                'swfplayer': '',
+                'playpath': '',
+                'pageurl': '',
+                'app': '',
+                'swfVfy': '',
+                'live': '',
+                'agent': '', //?
+                'referer': '',
+
+                //'cacheable': '', // Not supported in Showtime
+                'countdown_caption': '',
+                'countdown_title': '',
+                'nookies': {}, // NIPL cookies
+                //'nookie_expires': '', // Not supported in Showtime
+                'regex': '',
+                'nomatch': 0
+                //v1,v2,...,vn
+            };
+
+            this.vars.reports = {};
+        }
+
+        this.newVars(mediaitem);
+    }
+
+    function Server() {
+        this.credentials = {};
+        this.user_id = '';
+        this.favorites_id = '';
+        this.history_id = '';
+
+        this.authenticated = function() {
+            if (this.user_id != '')
+                return true;
+            return false;
+        };
+
+        this.login = function() {
+            if(this.authenticated())      
+                return true;
+                
+            var reason = "Login required";    
+            var do_query = false;    
+            while(1) { 
+                this.credentials = plugin.getAuthCredentials("Navi-X", reason, do_query); 
+
+                if(!this.credentials) {	
+                    if(!do_query) {	  
+                        do_query = true;	  
+                        continue;
+                    }	
+                    return "No credentials";      
+                }      
+
+                if(this.credentials.rejected)	
+                    return "Rejected by user";   
+
+                try {
+                    var v = showtime.httpPost("http://www.navixtreme.com/members/", {
+                        'action':'takelogin', 
+                        'ajax':'1', 
+                        'username':this.credentials.username,
+                        'password':this.credentials.password, 
+                        'rndval':new Date().getTime()
+                    });     
+            
+                    var lines = v.toString().split("\n");
+
+                    if (lines[0] === 'ok') {
+                        this.cookie = "l_access=" + lines[1] + "; l_attempt=" + lines[2] + "; ";
+
+                        if (v.headers["Set-Cookie"])
+                            this.user_id = v.headers["Set-Cookie"].slice(5, v.headers["Set-Cookie"].indexOf(";"));
+                        
+                        if(!this.user_id) {	
+                            reason = 'Login failed, try again';	
+                            continue;      
+                        }      
+                        
+                        this.cookie += v.headers["Set-Cookie"].slice(0, v.headers["Set-Cookie"].indexOf(";"));
+                        
+                        showtime.trace('Logged in to Navi-X as user: ' + this.credentials.username);
+
+                        // Sync IP with Navi-X server
+                        this.ipsync();
+
+                        // Enable/Disable Adult Content
+                        this.AdultContent(); 
+
+                        // Get ID of Favorite playlist for this user
+                        this.getPlaylistId("Favorites", true);
+
+                        // Get ID of History playlist for this user
+                        this.getPlaylistId("History", true);
+
+                        return false; 
+                    }
+                    else if (lines[0] === 'invalid')
+                        continue;
+                }
+                catch (ex) { showtime.trace('Navixtreme: Could not log in to the website.'); return -1; }
+            }
+        };
+
+        this.AdultContent = function() {
+            try {
+                var value = '1';
+                if (service.adult == false)
+                    value = '0';
+
+                var v = showtime.httpPost("http://www.navixtreme.com/members", {
+                    'action':'adult_toggle', 
+                    'value':value
+                }, null, {
+                    'cookie' : this.cookie
+                });
+                showtime.trace('Navixtreme: ' + v);
+            }
+            catch(ex) { showtime.trace('Navixtreme: Couldn\'t enable adult content.'); }
+        }
+
+        this.ipsync = function() {
+            var v = showtime.httpPost("http://www.navixtreme.com/members/", {
+                'action':'ipsync', 
+                'rndval':new Date().getTime()
+            }, null, {
+                'cookie' : this.cookie
+            });
+
+            if (v.toString() == 'ok') {
+                showtime.trace('Navixtreme: IP synced succesfully');
             }
         }
 
-        this.loc_url = unescape(mediaitem.URL)
-        video_link = unescape(mediaitem.URL).replace(/\\/g,'');
+        this.existInPlaylist = function(item, playlist_name) {
+            var playlist_id = this.getPlaylistId(playlist_name);
+            var playlist_url = 'http://www.navixtreme.com/playlist/' + playlist_id + '/' + playlist_name + '.plx';
 
-        showtime.sleep(.1)
-        var report="Processor final result:\n URL: "+this.loc_url
-        if (mediaitem.playpath>'')
-            report=report+"\n PlayPath: "+mediaitem.playpath
-        if (mediaitem.swfplayer>'')
-            report=report+"\n SWFPlayer: "+mediaitem.swfplayer
-        if (mediaitem.pageurl>'')
-            report=report+"\n PageUrl: "+mediaitem.pageurl
-        showtime.trace(report);
+            var playlist = new Playlist(null, playlist_url, new MediaItem());
+            playlist.render = false;
+            playlist.loadPlaylist(playlist_url);
 
-        return 0
+            showtime.trace('Navixtreme: Looking for item #' + item.id + ' in playlist ' + playlist_name + '.');
+        
+            if (item.processor === '')
+                item.processor = 'undefined';
+
+            if (item.type == 'plx' || item.type == 'unknown')
+                item.type = 'playlist';
+
+            var exist = false;
+            for (var i in playlist.list) {
+                var it = playlist.list[i];
+                if (item.type == 'video') {
+                    if (it.URL === item.URL && it.processor === item.processor) {
+                        exist = true;
+                    }
+                }
+                else {
+                    if (it.type === item.type && it.URL === item.URL) {
+                        exist = true;
+                    }
+                }
+
+                if (exist) {
+                    showtime.trace('NAVI-X: Found the entry in the playlist ' + playlist_name + '.');
+                    return exist;
+                }
+            }
+
+            showtime.trace('NAVI-X: This entry was not found in the playlist ' + playlist_name + '.');
+            return false;
+        };
+
+        this.removeFromPlaylist = function(playlist_name, item) {
+            var playlist_id = this.getPlaylistId(playlist_name);
+            var playlist_url = 'http://www.navixtreme.com/playlist/' + playlist_id + '/' + playlist_name + '.plx';
+
+            var playlist = new Playlist(null, playlist_url, new MediaItem());
+            playlist.render = false;
+            playlist.loadPlaylist(playlist_url);
+
+            var id = this.getIndexOfIteminPlaylist(playlist, item);
+
+            if (id == -1)
+                return false;
+
+            var result = showtime.httpPost('http://www.navixtreme.com/mylists/',{
+                'action': 'item_delete',
+                'id': playlist.list[id].id,
+                'rndval':parseInt(new Date().getTime())
+            }, null, {
+                'cookie' : this.cookie
+            }).toString();
+                
+            if (result.split("\n")[0] == 'ok') {
+                showtime.trace('Navixtreme: Item was succesfully removed from playlist ' + playlist_name + '.');
+                return true;
+            }
+            else {
+                showtime.trace('Navixtreme: ERROR - ' + result);
+                return false;
+            }
+        };
+
+        this.getIndexOfIteminPlaylist = function(playlist, item) {
+            if (item.type == 'plx' || item.type == 'unknown')
+                item.type = 'playlist';
+
+            for (var id in playlist.list) {
+                var it = playlist.list[id];
+                if (item.type == 'video') {
+                    if (it.URL === item.URL && it.processor === item.processor)
+                        return id;
+                }
+                else {
+                    if (it.type === item.type && it.URL === item.URL)
+                        return id;
+                }
+            }
+            return -1;
+        }
+
+        this.addToPlaylist = function(playlist_name, item) {
+            var playlist_id = '';
+            if (playlist_name != 'Favorites' || playlist_name != 'History')
+                playlist_id = this.getPlaylistId(playlist_name, true);
+            else if (playlist_name === 'Favorites')
+                playlist_id = this.favorite_id;
+
+            if (playlist_id == '')
+                return false;
+
+            //save item
+            if (item.type == 'playlist' || item.type == 'unknown')
+                item.type = 'plx';
+
+            if (playlist.list.length > 1) {
+                for (var i = 0; i < playlist.list.length; i++) {
+                    var it = playlist.list[i];
+            
+                    if (it.processor === '')
+                        it.processor = 'undefined';
+                    if (it.URL === item.URL && it.processor === item.processor && it.thumb === item.thumb && it.description === item.description) {
+                        this.removeFromPlaylist('History', it);
+                    }
+                }
+            }
+                
+            var result = showtime.httpPost('http://www.navixtreme.com/mylists/',{
+                'URL': item.URL,
+                'action':'item_save',
+                'background': item.background,
+                'description': item.description,
+                'list_id': playlist_id,
+                'list_pos':'top',
+                'name': item.name,
+                'playpath': item.playpath,
+                'plugin_type':'music',
+                'processor': item.processor,
+                'text_local':0,
+                'this_list_id':'',
+                'thumb': item.thumb,
+                'txt':'',
+                'type': item.type,
+                'rndval':parseInt(new Date().getTime())
+            }, null, {
+                'cookie' : this.cookie
+            }).toString();
+                
+            if (result.split("\n")[0] == 'ok') {
+                showtime.trace('Navixtreme: Item was succesfully added to playlist ' + playlist_name + '.');
+                return true;
+            }
+            else {
+                showtime.trace('Navixtreme: ERROR - ' + result);
+                return false;
+            }
+        };
+
+        this.getPlaylistId = function(title, quiet) {
+            if (title == 'History' && this.history_id != '')
+                return this.history_id;
+            else if (title == 'Favorites' && this.favorites_id != '')
+                return this.favorites_id;
+
+            var name = title.toLowerCase().replace(' ', '_');
+            var playlist_id = '';
+
+            var data = showtime.httpGet('http://www.navixtreme.com/playlist/mine.plx', null, {
+                'cookie':this.cookie
+            });
+
+            try {
+                //get playlist plx
+                playlist_id = data.toString().match('playlist/(.*?)/' + name + '.plx')[1];
+                showtime.trace('NAVI-X: ' + title + ' plx id: ' + playlist_id);
+            }
+            catch (err) {
+                showtime.trace('Navixtreme: ' + err);
+
+                var readme = false;
+                if (title == 'History' || title == 'Favorites')
+                    readme = true;
+
+                if (!quiet) {
+                    //playlist plx doesn't exist
+                    if (showtime.message("You don't have any playlist with that name, do you want to create one?", true, true))
+                        playlist_id = this.createPlaylist(title, readme);
+                }
+                else playlist_id = this.createPlaylist(title, readme);
+            }
+            this[name + '_id'] = playlist_id;
+            return playlist_id;
+        }
+
+        this.createPlaylist = function(title, readme/*, description, background, logo, icon, adult*/) {
+            var visibility = service.playlistsVisibility;
+            if (service.playlistsVisibility)
+                visibility = '1';
+            else
+                visibility = '0';
+
+            if (title == 'History')
+                visibility = '1';
+
+            var name = title.toLowerCase().replace(' ', '_') + '_id';
+            this[name] = playlist_id;
+
+            var playlist_id = showtime.httpPost('http://www.navixtreme.com/mylists/', {
+                'action':'list_save','background':'','description':'','icon_playlist':'','id':'','is_adult':0,'is_home':1,
+                'is_private': visibility,'logo':'','player':'','title': title,'rndval':parseInt(new Date())
+            }, null, {
+                'cookie':this.cookie
+            }).toString();
+
+            if (readme) {
+                showtime.httpPost('http://www.navixtreme.com/mylists/',{
+                    'URL':'','action':'item_save','background': '','description': '','list_id': playlist_id,'list_pos':'top',
+                    'name':'Navi-X Readme','player':'','playpath':'','plugin_type':'music','processor':'','text_local':1,
+                    'this_list_id':'','thumb':'',
+                    'txt': 'Thank you for using Navi-X.\n\n'+
+                                'Any items added will be by default stored as private and will not be visible by other users!\n\n'+
+                                'You can also import and manage your favorites online using the playlist editor. See also http://www.navixtreme.com. \n\n'+
+                                'Have fun using Navi-X, from Navi-X\' Showtime Plugin\' developer facanferff',
+                    'type':'text','rndval':parseInt(new Date().getTime())
+                }, null, {
+                    'cookie':this.cookie
+                });
+            }
+
+            showtime.trace('NAVI-X: ' + title + ' plx id: ' + playlist_id);
+            return playlist_id;
+        }
     }
-}
 
-    
+    function Store() {
+        this.add_report_processor = function(url, processor, error){
+            if(this.exist_report_processor(url, processor))
+                return;
+
+            if(!report_processors[url])
+                report_processors[url] = '';
+		
+            report_processors[url] = processor + ' : ' + error;
+            showtime.trace('Entry succesfully reported in local store.');
+        }
+
+        this.exist_report_processor = function(url, processor){
+            if(report_processors[url] && report_processors[url] == processor){
+                return true;
+            }else{ return false; }
+
+        }
+    }
+
+    function TMDB() {
+        this.key = "78d57cc453f9a284f483a0969ee65578";
+
+        this.validMovieTitle = function(title) {
+            var regex = new RegExp(/(.+?)\(([0-9]+?)\).*/);
+            var match = regex.exec(title);
+
+            if (!match) {
+                showtime.trace('TMDB: Title not valid for a movie.');
+                return null;
+            }
+            else {
+                var t = "";
+                t += match[1] + '(' + match[2] + ')';
+                showtime.trace('TMDB: Title valid, ' + t);
+                return t;
+            }
+        }
+
+        this.searchMovie = function(title) {
+            var args = {
+                'api_key': this.key,
+                'query': escape(title),
+                'include_adult': 'true'
+
+            };
+            var data = showtime.httpGet("http://api.themoviedb.org/3/search/movie", args, {
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+            });
+            data = showtime.JSONDecode(data.toString());
+
+            if (parseInt(data['total_results']) > 0) {
+                showtime.trace('TMDB: Found ' + data['total_results'] +' movie entries.');
+                return data.results[0];
+            }
+            else { 
+                showtime.trace('TMDB: No movie entries found.');
+                return null;
+            }
+        }
+
+        this.getMovie = function(title) {
+            var t =  this.validMovieTitle(title);
+
+            if (!t)
+                return null;
+
+            var args = {
+                'api_key': this.key,
+                'query': title,
+                'include_adult': true
+            };
+
+            var item = this.searchMovie(t);
+
+            if (!item)
+                return null;
+            else {
+                var id = item.id;
+                var data = showtime.JSONDecode(showtime.httpGet("http://api.themoviedb.org/3/movie/" + id, {
+                    'api_key': this.key
+                }, {
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+                }).toString());
+
+                return data;
+            }
+        }
+    }
+	
 plugin.addURI(PREFIX + ":start", startPage);
 })(this);
