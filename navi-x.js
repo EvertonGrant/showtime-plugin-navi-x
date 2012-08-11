@@ -1,7 +1,7 @@
 /**
- * Navi-X plugin for showtime by facanferff (Fábio Canada / facanferff@hotmail.com)
+ * Navi-X plugin for showtime by facanferff (Fábio Ferreira / facanferff.showtime@hotmail.com)
  *
- *  Copyright (C) 2011 facanferff (Fábio Canada / facanferff@hotmail.com)
+ *  Copyright (C) 2012 facanferff (Fábio Ferreira / facanferff.showtime@hotmail.com)
  * 
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -14,27 +14,61 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with this program.  If not, see <http://www.gnu.org/licenses/>.showtime.
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
-
+ 
 (function(plugin) {
 
     var PREFIX = "navi-x";
     var plxVersion = 8;
+    var version = '1.0';
+    var nxserver_URL = "navixtreme.com";
 
     var downloader = new Downloader();
     var store = new Store();
     var tmdb = new TMDB();
-    var server;
+    var imdb = new IMDB();
+    var server = new Server();
+    var tracking = new Tracking();
     var playlist;
-
-    var background_image1 = plugin.path + 'resources/background1.jpg';
   
     var home_URL = 'http://navi-x.googlecode.com/svn/trunk/Playlists/home.plx';
 
     // stores
     var report_processors = plugin.createStore('report_processors', true);
+    var user_playlists = plugin.createStore('user_playlists', true);
+    var user_settings = plugin.createStore('user_settings', true);
+    var tracking_settings = plugin.createStore('tracking_settings', true);
+    var reports_ids = plugin.createStore('reports_ids', true);
+
+    /*store.played_video_ids = plugin.createStore('played_video_ids', true);
+    if (!store.played_video_ids.ready) {
+        showtime.trace("Store: Played video ids empty");
+        store.played_video_ids.ready = "Ready";
+    }*/
+
+    // stores - playlists
+    store.history = plugin.createStore('playlists/history', true);
+    store.favorites = plugin.createStore('playlists/favorites', true);
+
+    if (!tracking_settings.user_id) {
+        tracking_settings.user_id = uniqid();
+        showtime.trace("Tracking: Your unique id is: " + tracking_settings.user_id);
+    }
+
+    if (!store.history.list) {
+        store.history.version = "1";
+        store.history.background = "http://www.navixtreme.com/images/backgrounds/bkg_navix_bh_plain.jpg";
+        store.history.title = "Navi-X » Local History";
+        store.history.list = "[]";
+    }
+
+    if (!store.favorites.list) {
+        store.favorites.version = "1";
+        store.favorites.background = "http://www.navixtreme.com/images/backgrounds/bkg_navix_bh_plain.jpg";
+        store.favorites.title = "Navi-X » Local Favorites";
+        store.favorites.list = "[]";
+    }
   
     var service = plugin.createService("Navi-X", "navi-x:start", "video", true,
 			   plugin.path + "logo.png");
@@ -45,81 +79,292 @@
 
     settings.createInfo("info",
 				 plugin.path + "logo.png",
-				 "Navi-X. Create your playlists on http://www.navixtreme.com/ \n" + 
-				 "Plugin developed by facanferff \n");
+				 "Plugin developed by facanferff. Create your playlists on http://www.navixtreme.com/");
+
+    settings.createDivider('Action Settings');
+
+    settings.createAction("cleanLocalPlaylists", "Clean Local History/Favorites", function () {
+        store.history.list = "[]";
+        store.favorites.list = "[]";
+        showtime.trace('Local History/Favorites were clean succesfully');
+        showtime.notify('Local History/Favorites were clean succesfully', 2);
+    });
 
     settings.createDivider('Browser Settings');
 
     settings.createBool("backgroundEnabled", "Background", false, function(v) { service.backgroundEnabled = v; });
 
-    settings.createDivider('User Settings (only functional if logged in)');
+    settings.createDivider('Processor Settings');
 
-    settings.createBool("login", "Enable Log In Popup", true, function(v) { service.login = v; });
-    settings.createBool("adult", "Adult Content", false, function(v) { service.adult = v; });
-    settings.createBool("playlistsVisibility", "New Playlists Private", true, function(v){ service.playlistsVisibility = v; });
+    settings.createBool("cachingProcessors", "Cache Processors (only for those cacheable)", true, function (v) { service.cachingProcessors = v; });
+    settings.createBool("verbose", "Verbose mode", true, function (v) { service.verbose = v; });
 
+    settings.createDivider('User Settings (only functional if authenticated)');
+
+    settings.createBool("adultContent", "Adult Content", false, function (v) { service.adult = v; });
+
+    settings.createAction("login", "Login to http://navixtreme.com", function () {
+        try {
+            server.init();
+            if (server.login()) {
+                showtime.notify("Authenticated succesfully", 2);
+                server.adultContent();
+            }
+        }
+        catch (ex) { showtime.trace(ex); showtime.notify('Error while authenticating and parsing default playlists', 2); }
+    });
+
+    // Try to parse some possible previous authentications and check if adult content value changed
+    server.init();
+    server.adultContent();
+    
+    settings.createDivider('Tracking Settings');
+
+    settings.createBool("report_processors", "Report Automatically processors not working", true, function (v) { service.report_processors = v; });
+    settings.createBool("historyTracking", "Enable History Tracking (local)", true, function (v) { service.historyTracking = v; });
+    
     settings.createDivider('Video Settings');
 
-    settings.createBool("advanced", "Enable Advanced Mode for Videos (Video information, User Actions)", false, function(v) { service.advanced = v; });
-    settings.createBool("tmdb", "TMDB Scraper", false, function(v) { service.tmdb = v; });
-  
+    settings.createBool("tmdb", "TMDB Scraper", false, function (v) { service.tmdb = v; });
+
+    settings.createDivider('TMDB Settings (TMDB View)');
+
+    settings.createBool("tmdb_collections", "Collections", false, function (v) { service.tmdb_collections = v; });
+    settings.createBool("tmdb_similarmovies", "Similar Movies", false, function (v) { service.tmdb_similarmovies = v; });
+    settings.createBool("tmdb_trailers", "Trailers", false, function (v) { service.tmdb_trailers = v; });
+
+    settings.createDivider('IMDB Settings (TMDB View)');
+
+    settings.createBool("imdb_parentsguide", "Parents Guide", false, function (v) { service.imdb_parentsguide = v; });
+
     function startPage(page) {
-        var v = 3 * 10000000 +  5 * 100000 + 212;
+        var v = 3 * 10000000 +  99 * 100000 + 448;
         if (showtime.currentVersionInt < v) {
             page.error('Your version of Showtime is outdated for this plugin. Look at https://www.lonelycoder.com/showtime/download for a new build of it.');
             return;
         }
 
+        // Page Menu
+        pageMenu(page);
+
+        page.metadata.glwview = plugin.path + "views/array.view";
+
         page.type = "directory";
-        page.contents = "items";
-
-        server = new Server();
-
-        if (service.login == '1')
-            server.login();
+        page.contents = "list";
 
         playlist = new Playlist(page, home_URL, new MediaItem());
         var result = playlist.loadPlaylist(home_URL);
-
+        
         page.loading = false;
     }
 
+    plugin.addURI(PREFIX + ":text:(.*):(.*)", function(page, title, url) {
+        page.type = "item";
+    
+        var content = showtime.httpGet(unescape(url)).toString();
+        page.appendPassiveItem("bodytext", new showtime.RichText(content));
+    
+        page.metadata.title = unescape(title)
+    
+        page.loading = false;
+    });
+
+    /*plugin.addURI(PREFIX + ":tmdb:trailers:(.*)", function (page, id) {
+        page.metadata.glwview = plugin.path + "views/array.view";
+        page.type = "directory";
+
+        var items = tmdb.getData("movie", id, "trailers");
+
+        if (!items) {
+            page.error("TMDB failed to get Trailers list for this movie.");
+            return;
+        }
+
+        for (var i in items.youtube) {
+            var item = items.youtube[i];
+            page.appendItem("youtube:video:simple:Trailer:" + item.source, "video", { title: item.name + " (" + item.size + ")", icon: "http://i4.ytimg.com/vi/" + item.source + "/mqdefault.jpg" });
+        }
+
+        page.loading = false;
+    });
+
+    plugin.addURI(PREFIX + ":tmdb:cast:(.*)", function (page, id) {
+        page.metadata.glwview = plugin.path + "views/array.view";
+        page.type = "directory";
+
+        var items = tmdb.getData("movie", id, "casts");
+
+        if (!items) {
+            page.error("TMDB failed to get Cast list for this movie.");
+            return;
+        }
+
+        for (var i in items.crew) {
+            var item = items.crew[i];
+            if (item.department == "Directing") {
+                var logo = "tmdb:image:profile:" + item.profile_path;
+                if (!item.profile_path || item.profile_path == "null") logo = plugin.path + "img/nophoto.jpg";
+                page.appendItem(PREFIX + ":tmdb:person:" + item.id, "video", { title: item.name + " - " + item.job, icon: logo });
+                break;
+            }
+        }
+
+        for (var i in items.cast) {
+            var item = items.cast[i];
+            var logo = "tmdb:image:profile:" + item.profile_path;
+            if (!item.profile_path || item.profile_path == "null") logo = plugin.path + "img/nophoto.jpg";
+            page.appendItem(PREFIX + ":tmdb:person:" + item.id, "video", { title: item.name + " - " + item.character, icon: logo });
+        }
+
+        page.loading = false;
+    });*/
+
+    plugin.addURI(PREFIX + ":tmdb:person:(.*)", function (page, id) {
+        // Page Menu
+        pageMenu(page);
+
+        page.metadata.glwview = plugin.path + "views/array.view";
+        page.type = "directory";
+
+        var items = tmdb.getData("person", id, "credits");
+
+        if (!items) {
+            page.error("TMDB failed to get the credits list for this person.");
+            return;
+        }
+
+        for (var i in items.crew) {
+            var item = items.crew[i];
+            var logo = "tmdb:image:poster:" + item.poster_path;
+            if (!item.poster_path || item.poster_path == "null") logo = "img/nophoto.jpg";
+            page.appendItem(PREFIX + ":tmdb:" + item.id + ":1", "video", { title: item.title + " - " + item.job, icon: logo });
+        }
+
+        for (var i in items.cast) {
+            var item = items.cast[i];
+            var logo = "tmdb:image:poster:" + item.poster_path;
+            if (!item.poster_path || item.poster_path == "null") logo = "img/nophoto.jpg";
+            page.appendItem(PREFIX + ":tmdb:" + item.id + ":1", "video", { title: item.title + " - " + item.character, icon: logo });
+        }
+
+        page.loading = false;
+    });
+
+    /*plugin.addURI(PREFIX + ":tmdb:movie:similar:(.*)", function (page, id) {
+        page.metadata.glwview = plugin.path + "views/array.view";
+        page.type = "directory";
+
+        var items = tmdb.getData("movie", id, "similar_movies");
+
+        if (!items) {
+            page.error("TMDB failed to get the similar movies list.");
+            return;
+        }
+
+        for (var i in items.results) {
+            var item = items.results[i];
+            var logo = "tmdb:image:poster:" + item.poster_path;
+            if (!item.poster_path || item.poster_path == "null") logo = "img/nophoto.jpg";
+            page.appendItem(PREFIX + ":tmdb:" + item.id + ":1", "video", { title: item.title, icon: logo });
+        }
+
+        page.loading = false;
+    });
+
+    plugin.addURI(PREFIX + ":tmdb:collection:(.*)", function (page, id) {
+        page.metadata.glwview = plugin.path + "views/array.view";
+        page.type = "directory";
+
+        var items = tmdb.getData("collection", id);
+
+        if (!items) {
+            page.error("TMDB failed to get the collection.");
+            return;
+        }
+
+        page.metadata.background = "tmdb:image:backdrop:" + items.backdrop_path;
+        for (var i in items.parts) {
+            var item = items.parts[i];
+            var logo = "tmdb:image:poster:" + item.poster_path;
+            if (!item.poster_path || item.poster_path == "null") logo = "img/nophoto.jpg";
+            page.appendItem(PREFIX + ":tmdb:" + item.id + ":1", "video", { title: item.title, icon: logo });
+        }
+
+        page.loading = false;
+    });*/
+
     plugin.addURI(PREFIX + ":playlist:(.*):(.*)", function(page, type, url) {
         var result = -1;
-	
+
+        page.loading = true;
+
+        // Page Menu
+        pageMenu(page);
+
         page.type = "directory";
-        page.contents = "items";
-	
+        page.metadata.glwview = plugin.path + "views/array.view";
+
         var mediaitem = new MediaItem();
         mediaitem.type = unescape(type);
         mediaitem.URL = unescape(url);
 
         playlist = new Playlist(page, mediaitem.URL, mediaitem);
 	
-        page.loading = false;
-
         if (mediaitem.type.slice(0,6) == 'search') {
             result = playlist.parseSearch();
         }
         else
             result = playlist.loadPlaylist(mediaitem.URL);
 
+        page.loading = false;
+
         showtime.trace(result.message);
         if (result.error)
         {
             page.error(result.errorMsg);
+            return;
         }
     });
 
-    plugin.addURI(PREFIX + ":video:(.*):(.*):(.*)", function(page, title, url, proc) {
-        var video = unescape(url);
-    
-        for (var i = 0; i < playlist.list.length; i++) {
-            var item = playlist.list[i];
-            if (item.URL == video) {
-                var id = i;
-            }
+    /*plugin.addURI(PREFIX + ":playlist:search:(.*):(.*)", function(page, url, query) {
+        var result = -1;
+
+        // Page Menu
+        pageMenu(page);
+	
+        page.type = "directory";
+        page.metadata.glwview = plugin.path + "views/array.view";
+	
+        var mediaitem = new MediaItem();
+        mediaitem.type = "playlist";
+        mediaitem.URL = unescape(url);
+
+        playlist = new Playlist(page, mediaitem.URL, mediaitem);
+	
+        page.loading = false;
+
+        playlist.render = false;
+        result = playlist.loadPlaylist(mediaitem.URL);
+
+        for (var i in playlist.list) {
+            playlist.list[i].URL += encodeURIComponent(query);
         }
+        playlist.showPage(mediaitem.type);
+
+        showtime.trace(result.message);
+        if (result.error)
+        {
+            page.error(result.errorMsg);
+            return;
+        }
+    });*/
+
+    plugin.addURI(PREFIX + ":video:(.*):(.*):(.*):(.*)", function (page, id, title, url, proc) {
+        page.type = "directory";
+        page.contents = "list";
+        var video = unescape(url);
+
+        var item = playlist.list[id];
 
         if (proc != 'undefined' && proc != '') {
             var mediaitem = new MediaItem();
@@ -136,11 +381,23 @@
 
         if (proc != 'undefined' && proc != '' && result.error) {
             showtime.trace(result.message);
+            if (service.report_processors == "1") {
+                tracking.report_processor(unescape(proc), video, result.message);
+            }
+
+            /*if (item.id && item.id != "") {
+                store.played_video_ids[item.id] = "Error in processing";
+                showtime.trace("Stored video id as played");
+            tmdb*/
+
             page.error(result.message);
         }
         else {
-            if (server.authenticated())
-                server.addToPlaylist("History", playlist.list[id]);
+            if (service.historyTracking == "1") {
+                var name = unescape(title);
+
+                store.add_to_playlist("history", item);
+            }
 
             if (proc != 'undefined' && proc != '') {
                 showtime.trace(result.message);
@@ -153,130 +410,328 @@
 
             showtime.trace('Video Playback: Reading ' + video);
 
-            page.source = "videoparams:" + showtime.JSONEncode({      
-                title: unescape(title),     
+            var videoparams = {
+                title: unescape(title),
                 sources: [
-	        {
-	            url: video
-	        }]    
-            });    
+	            {
+	                url: video
+	            }],
+                subtitles: []
+            };
+
+            if (playlist) {
+                for (var i in playlist.list[id]) {
+                    if (i.slice(0, 9) == 'subtitle.') {
+                        videoparams.subtitles.push({
+                            url: item[i],
+                            language: i.slice(9)
+                        });
+                    }
+                }
+            }
+
+            /*if (item.id && item.id != "") {
+                store.played_video_ids[item.id] = "No processing errors found";
+                showtime.trace("Stored video id: " + store.played_video_ids[item.id]);
+            }*/
+
+            showtime.trace('Any error from this point is a bug of Showtime.\nPlease wait for Showtime to load the video...', 3);
+            
+            page.source = "videoparams:" + showtime.JSONEncode(videoparams);
+
             page.type = "video";
         }
     });
 
-    plugin.addURI(PREFIX + ":videoscreen:([0-9]*)", function (page, id) {
-        page.type = "item";
+    plugin.addURI(PREFIX + ":tmdb:(.*):([0-9]*)", function (page, query, mode) {
+        page.type = "directory";
+        page.metadata.glwview = plugin.path + "views/tmdb.view";
+        page.metadata.backgroundAlpha = 0.7;
 
-        page.metadata.logo = playlist.list[id].thumb;
-        page.metadata.icon = playlist.list[id].thumb;
-        page.metadata.title = playlist.list[id].name;
+        query = unescape(query);
+        var id = null;
+        if (mode == "0") {
+            id = tmdb.searchMovie(query);
 
-        var alternative = false;
-
-        if (service.tmdb == '1') {
-            var item = tmdb.getMovie(playlist.list[id].name);
-
-            if (item) {
-                page.metadata.title = item.title;
-                var data = showtime.JSONDecode(showtime.httpGet("http://api.themoviedb.org/3/configuration", {
-                    'api_key': tmdb.key
-                }, {
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-                }).toString());
-                var base_url = data.images.base_url;
-                var size = "original";
-
-                page.metadata.icon = base_url + size + item.poster_path;
-                page.metadata.title = item.title;
-                page.metadata.logo = base_url + size + item.poster_path;
-                if (service.backgroundEnabled == "1")
-                    page.metadata.background = base_url + size + item.backdrop_path;
-
-                var genres = "";
-                for (var i in item.genres) {
-                    var entry = item.genres[i];
-                    genres += entry.name
-                    if (i < item.genres.length - 1)
-                        genres += ', ';
-                }
-
-                page.appendPassiveItem("label", new showtime.RichText(item.release_date), {title: "Release Date"});
-                page.appendPassiveItem("label", new showtime.RichText(genres), {title: "Genres"});
-                page.appendPassiveItem("label", new showtime.RichText(showtime.durationToString(parseInt(item.runtime * 60))), {title: "Duration"});
-                page.appendPassiveItem("label", new showtime.RichText(item.tagline), {title: "Tagline"});
-                page.appendPassiveItem("label", new showtime.RichText('$' + item.budget), {title: "Budget"});
-                page.appendPassiveItem("label", new showtime.RichText('$' + item.revenue), {title: "Revenue"});
-
-                page.appendPassiveItem("rating", parseFloat((item.vote_average / 2) / 5));
-    
-                page.appendPassiveItem("divider");  
-        
-                page.appendPassiveItem("bodytext", new showtime.RichText(item.overview));
+            if (!id) {
+                page.error("No movies found for the title given.");
+                return;
             }
-            else alternative = true;
         }
-        if (service.tmdb != '1' || alternative) {
-            page.appendPassiveItem("label", new showtime.RichText(playlist.list[id].URL),{title: "URL"});
-            page.appendPassiveItem("label", new showtime.RichText(playlist.list[id].processor), {title: "Processor"});
-
-            if (playlist.list[id].rating)
-                page.appendPassiveItem("rating", parseFloat(playlist.list[id].rating / 5));
-    
-            page.appendPassiveItem("divider");  
-        
-            page.appendPassiveItem("bodytext", new showtime.RichText(playlist.list[id].description));
+        else if (parseInt(mode) < 3) id = query;
+        else {
+            page.error("Unknown mode");
+            return;
         }
-    
-        page.appendAction("navopen", PREFIX + ':video:' + escape(playlist.list[id].name) + ":" +
-        escape(playlist.list[id].URL) + ":" + escape(playlist.list[id].processor), true, {
-            title:'Watch Now'});
+
+        var item = tmdb.getData("movie", id);
+
+        if (!item) {
+            page.error("TMDB couldn't parse information for this movie.");
+            return;
+        }
+
+        var tmdb_id = item.id;
+
+        page.metadata.title = item.title;
+
+        page.metadata.logo = "tmdb:image:poster:" + item.poster_path;
+        page.metadata.background = "tmdb:image:backdrop:" + item.backdrop_path;
+
+        // General Movie Informations
+        var genres = "";
+        for (var i in item.genres) {
+            var entry = item.genres[i];
+            genres += entry.name;
+            if (i < item.genres.length - 1)
+                genres += ', ';
+        }
+
+        var titles = [];
+        var title = item.title;
+
+        if (item.original_title != title) {
+            page.metadata.original_title = item.original_title;
+        }
+
+        // Cast and Crew Informations
+        var item1 = tmdb.getData("movie", tmdb_id, "casts");
+        if (item1) {
+            var cast = [];
+            var crew = [];
+            var director = "";
+            var writers = "";
+
+            for (var i in item1.crew) {
+                var person = item1.crew[i];
+
+                if (person.department == "Directing" && director == "")
+                    director = person.name;
+
+                if (person.department == "Writing" && writers.indexOf(person.name) == -1)
+                    writers += person.name + ", ";
+
+                var image = "tmdb:image:profile:" + person.profile_path;
+                if (!person.profile_path || person.profile_path == "null") image = "img/nophoto.jpg";
+                crew.push({
+                    title: person.name + " - " + person.job,
+                    image: image,
+                    url: PREFIX + ":tmdb:person:" + person.id,
+                    parent: "Crew List"
+                });
+            }
+
+            if (writers != "")
+                writers = writers.slice(0, writers.length - 2);
+
+            item1.cast = insertionSort(item1.cast, "order");
+            for (var i in item1.cast) {
+                var character = item1.cast[i];
+                var image = "tmdb:image:profile:" + character.profile_path;
+                if (!character.profile_path || character.profile_path == "null") image = "img/nophoto.jpg";
+                cast.push({
+                    title: character.name + " - " + character.character,
+                    image: image,
+                    url: PREFIX + ":tmdb:person:" + character.id,
+                    parent: "Cast List"
+                });
+            }
+
+            page.appendAction("navopen", PREFIX + ":tmdb:cast:" + tmdb_id, true, {
+                title: 'Cast List',
+                childTilesX: 3,
+                childTilesY: 4,
+                array: cast,
+                type: "array",
+                url: PREFIX + ":tmdb:cast:" + tmdb_id
+            });
+
+            page.appendAction("navopen", PREFIX + ":tmdb:cast:" + tmdb_id, true, {
+                title: 'Crew List',
+                childTilesX: 3,
+                childTilesY: 4,
+                array: crew,
+                type: "array"
+            });
+        }
+
+        page.metadata.description = item.overview;
+
         
-        if (server.authenticated()) {
-            page.appendAction("pageevent", "addToPlaylist", true, {title:'Add to Playlist'});
 
-            if (!server.existInPlaylist(playlist.list[id], 'Favorites'))
-                page.appendAction("pageevent", "addFavorite", true, {title:'Add Favorite'});
-            else
-                page.appendAction("pageevent", "removeFavorite", true, {title:'Remove Favorite'});
-            
-            page.onEvent('addToPlaylist', function() {
-                var titleInput = showtime.textDialog('Title of Playlist: ', true, true);
+        page.appendPassiveItem("label", new showtime.RichText(director), { title: "Director: " });
+        page.appendPassiveItem("label", new showtime.RichText(writers), { title: "Writers: " });
+        page.appendPassiveItem("label", new showtime.RichText(genres), { title: "Genres: " });
+        page.appendPassiveItem("label", new showtime.RichText("$" + item.budget.toString().replace(/(\d)(?=(\d\d\d)+(?!\d))/g, "$1,")), { title: "Budget: " });
 
-                if (search.rejected) {
-                    return;
+        if (item.release_date) {
+            var year = item.release_date.slice(0, item.release_date.indexOf("-"));
+            page.appendPassiveItem("label", new showtime.RichText(year), { title: "Year: " });
+        }
+
+        page.appendPassiveItem("rating", parseFloat(item.vote_average) / 10, { title: "Rating: " });
+        page.appendPassiveItem("label", new showtime.RichText(showtime.durationToString(parseInt(item.runtime * 60))), { title: "Runtime: " });
+
+        // Trailers
+        if (service.tmdb_trailers == "1") {
+            var item1 = tmdb.getData("movie", tmdb_id, "trailers");
+            if (item1) {
+                var trailers = [];
+                for (var i in item1.youtube) {
+                    var trailer = item1.youtube[i];
+                    trailers.push({
+                        image: "http://i4.ytimg.com/vi/" + trailer.source + "/mqdefault.jpg",
+                        title: trailer.name + " (" + trailer.size + ")",
+                        url: "youtube:video:simple:Trailer:" + trailer.source
+                    });
                 }
-                try {
-                    var title = titleInput.input;
-                    if (title.length == 0) {
-                        return;
+
+                if (trailers.length > 0) {
+                    page.appendAction("navopen", PREFIX + ":tmdb:trailers:" + tmdb_id, true, {
+                        title: 'Trailers',
+                        childTilesX: 1,
+                        childTilesY: 2,
+                        array: trailers,
+                        type: "array"
+                    });
+                }
+            }
+        }
+
+        // Collection
+        if (service.tmdb_collections == "1") {
+            if (item.belongs_to_collection && item.belongs_to_collection != "null") {
+                var item1 = tmdb.getData("collection", item.belongs_to_collection.id);
+                var collection = [];
+                if (item1) {
+                    showtime.trace("TMDB: Parsing Collection");
+                    for (var i in item1.parts) {
+                        var movie = item1.parts[i];
+                        var image = "tmdb:image:profile:" + movie.poster_path;
+                        if (!movie.poster_path || movie.poster_path == "null") image = "img/nophoto.jpg";
+                        collection.push({
+                            image: image,
+                            title: movie.title,
+                            url: PREFIX + ":tmdb:" + movie.id + ":1"
+                        });
                     }
-
-                    if (server.addToPlaylist(title, playlist.list[id]))
-                        showtime.message('Entry was added syccesfully to the playlist ' + title + '.', true, false);
-                    else
-                        showtime.message('There was one error while trying to add this entry to the playlist', true, false);
                 }
-                catch(ex) { }
-            });
 
-            page.onEvent('addFavorite', function() {
-                if (!server.existInPlaylist(playlist.list[id], 'Favorites')) {
-                    if (server.addToPlaylist('Favorites', playlist.list[id]))
-                        showtime.message('Navixtreme: Entry was added syccesfully to the playlist Favorites.', true, false);
-                    else
-                        showtime.message('Navixtreme: There was one error while trying to add this entry to the playlist', true, false);
-                }
-                else showtime.message('Navixtreme: Entry exists already in the target playlist.', true, false);
-            });
-
-            page.onEvent('removeFavorite', function() {
-                if (server.removeFromPlaylist('Favorites', playlist.list[id]))
-                    showtime.message('Entry was removed syccesfully to the playlist Favorites.', true, false);
-                else
-                    showtime.message('There was one error while trying to remove this entry to the playlist', true, false);
-            });
+                page.appendAction("navopen", PREFIX + ":tmdb:collection:" + item.belongs_to_collection.id, true, {
+                    title: 'Collection',
+                    childTilesX: 2,
+                    childTilesY: 2,
+                    array: collection,
+                    type: "array"
+                });
+            }
         }
-	
+
+        // Similar movies
+        if (service.tmdb_similarmovies == "1") {
+            var item1 = tmdb.getData("movie", tmdb_id, "similar_movies");
+            if (item1) {
+                var movies = [];
+                showtime.trace("TMDB: Detected " + item1.results.length + " similar movies");
+                for (var i in item1.results) {
+                    var movie = item1.results[i];
+                    try {
+                        var image = "tmdb:image:poster:" + movie.poster_path;
+                        if (!movie.poster_path || movie.poster_path == "null") image = "img/nophoto.jpg";
+                        movies.push({
+                            image: image,
+                            title: movie.title,
+                            url: PREFIX + ":tmdb:" + movie.id + ":1"
+                        });
+                    }
+                    catch (ex) { }
+                }
+
+                page.appendAction("navopen", PREFIX + ":tmdb:movie:similar:" + tmdb_id, true, {
+                    title: 'Similar Movies',
+                    childTilesX: 2,
+                    childTilesY: 2,
+                    array: movies,
+                    type: "array"
+                });
+            }
+        }
+
+        // Search for entries
+        var mediaitem = new MediaItem();
+        mediaitem.type = "playlist";
+        mediaitem.URL = unescape(url);
+
+        playlist = new Playlist(page, mediaitem.URL, mediaitem);
+
+        page.loading = false;
+
+        playlist.render = false;
+        var result = playlist.loadPlaylist("http://navi-x.googlecode.com/svn/trunk/networks/content_search/index.txt");
+
+        var q = title;
+        /*if (page.metadata.original_title) {
+            q = item.original_title;
+        }*/
+
+        var items = [];
+        for (var i in playlist.list) {
+            if (year)
+                q += " " + year;
+            if (playlist.list[i].type == "search") {
+                items.push({
+                    image: playlist.list[i].thumb,
+                    title: playlist.list[i].name,
+                    url: PREFIX + ":playlist:playlist:" + escape(playlist.list[i].URL + encodeURIComponent(q)),
+                    original_url: PREFIX + ":playlist:playlist:" + escape(playlist.list[i].URL)
+                });
+            }
+        }
+
+        //page.metadata.searchforentries = items;
+
+        var item = page.appendAction("navopen", PREFIX + ":playlist:search:" + escape("http://navi-x.googlecode.com/svn/trunk/networks/content_search/index.txt") + ":" + encodeURIComponent(title), true, {
+            title: 'Search for entries',
+            childTilesX: 3,
+            childTilesY: 3,
+            array: items,
+            type: "array"
+        });
+
+        /*var titles = [
+            [title, title, true]
+        ];
+        if (page.metadata.original_title) {
+            titles.push([page.metadata.original_title, page.metadata.original_title]);
+        }
+        page.options.createMultiOpt('query', 'Title to use as query for search', titles, function (v) {
+            q = v;
+
+            if (year)
+                q += " " + year;
+
+            for (var i in items) {
+                items[i].url = items[i].original_url + encodeURIComponent(q);
+            }
+
+            showtime.trace("Using '" + v + "' to search for entries.");
+
+            page.metadata.searchforentries = items;
+            showtime.print(item.metadata);
+            item.metadata.array = items;
+        }, true);*/
+
+        if (service.imdb_parentsguide == "1" && item.imdb_id && item.imdb_id != "null") {
+            var parentsguide = imdb.getParentsGuide(item.imdb_id);
+            if (parentsguide) {
+                page.appendAction("pageevent", "imdb_parentsguide", true, {
+                    title: 'IMDB - Parents Guide',
+                    body: showtime.entityDecode(parentsguide.replace(/<br\/>/g, "\n").replace(/<(.+?)>/g, "")),
+                    type: "bodytext"
+                });
+            }
+        }
+
         page.loading = false;
     });
 
@@ -296,38 +751,33 @@
             page.appendPassiveItem("label", new showtime.RichText(playlist.date), {title: "Date"});
 
         if (playlist.rating && playlist.rating != '-1.00')
-            page.appendPassiveItem("rating", parseFloat(playlist.rating) / 5);
+            page.appendPassiveItem("rating", parseFloat(playlist.rating) * 2 * 10);
     
         if (playlist.bodytext) {
             page.appendPassiveItem("divider");  
             page.appendPassiveItem("bodytext", new showtime.RichText(item.overview));
         }
     
-        if (server.authenticated()) {
-            playlist.URL = playlist.path;
+        playlist.URL = playlist.path;
 
-            if (!server.existInPlaylist(playlist, 'Favorites'))
-                page.appendAction("pageevent", "addFavorite", true, {title:'Add Favorite'});
+        if (!store.exist_in_playlist('favorites', playlist).found)
+            page.appendAction("pageevent", "addFavorite", true, { title: 'Add Favorite' });
+        else
+            page.appendAction("pageevent", "removeFavorite", true, { title: 'Remove Favorite' });
+
+        page.onEvent('addFavorite', function () {
+            if (store.add_to_playlist("favorites", playlist))
+                showtime.notify('Navixtreme: Entry was added syccesfully to the playlist Favorites.', 3);
             else
-                page.appendAction("pageevent", "removeFavorite", true, {title:'Remove Favorite'});
-        
-            page.onEvent('addFavorite', function() {
-                if (!server.existInPlaylist(playlist, 'Favorites')) {
-                    if (server.addToPlaylist('Favorites', playlist))
-                        showtime.message('Navixtreme: Entry was added syccesfully to the playlist Favorites.', true, false);
-                    else
-                        showtime.message('Navixtreme: There was one error while trying to add this entry to the playlist', true, false);
-                }
-                else showtime.message('Navixtreme: Entry exists already in the target playlist.', true, false);
-            });
+                showtime.notify('Navixtreme: There was one error while trying to add this entry to the playlist', 3);
+        });
 
-            page.onEvent('removeFavorite', function() {
-                if (server.removeFromPlaylist('Favorites', playlist))
-                    showtime.message('Navixtreme: Entry was removed syccesfully to the playlist Favorites.', true, false);
-                else
-                    showtime.message('Navixtreme: There was one error while trying to remove this entry to the playlist', true, false);
-            });
-        }
+        page.onEvent('removeFavorite', function () {
+            if (store.remove_from_playlist("favorites", playlist))
+                showtime.notify('Entry was removed syccesfully to the playlist Favorites.', 3);
+            else
+                showtime.notify('There was one error while trying to remove this entry to the playlist', 3);
+        });
 	
         page.loading = false;
     });
@@ -374,6 +824,7 @@
                 return result;
             }
             var searchstring = search.input;
+            showtime.trace(searchstring);
             if (searchstring.length == 0) {
                 result.error = true;
                 result.errorMsg = 'Empty search string.';
@@ -413,7 +864,7 @@
             else { //generic search
                 fn = searchstring.replace(/ /g,'+');   
                 var URL = this.mediaitem.URL;
-                this.mediaitem=new MediaItem();
+                this.mediaitem = new MediaItem();
                 this.mediaitem.URL = URL + fn;
                 if (search_type != '')
                     this.mediaitem.type = search_type;
@@ -425,22 +876,42 @@
                 this.loadPlaylist(this.mediaitem.URL);
             }
 
-            // Should not get this far
             return -1;
         }
 
         this.parsePLX = function() {
             var result = {};
+            var content = "";
 
-            var content = downloader.getRemote(this.path);
+            if (this.path.slice(0, 8) != "store://") {
+                content = downloader.getRemote(this.path);
+            }
+            else {
+                var file = eval(store[this.path.slice(8)]);
+                if (file.list == "[]") {
+                    result.error = false;
+                    return result;
+                }
+                for (var i in file) {
+                    try {
+                        this[i] = eval(file[i]);
+                    }
+                    catch (ex) { continue; }
+                }
+                result.error = false;
+                return result;
+            }
 
             if (content == "") {
                 result.error = true;
                 result.errorMsg = content.error;
                 return result;
             }
+            if (this.path.slice(0, 8) != "store://") {
+                content = content.response;
+            }
 
-            content = content.response.split(/\r?\n/);
+            content = content.split(/\r?\n/);
 
             //parse playlist entries 
             var counter = 0;
@@ -520,13 +991,6 @@
                             else
                                 this.list.splice(0, this.list.length);
                         }
-                        else if (key == 'background' && state == 0)
-                            this.background=value;
-                        else if (key == 'logo' && state == 0)
-                            this.logo=value;
-                            //         
-                        else if (key == 'title' && state == 0)
-                            this.title=value;
                         else if (key == 'description' && state == 0)
                         {
                             index = value.indexOf('/description');
@@ -538,12 +1002,7 @@
                                 state = 2; //description on more lines
                             }
                         }
-                        else if (key == 'playmode' && state == 0)
-                            this.playmode=value;
-                        else if (key == 'view' && state == 0)
-                            this.view=value;                           
-                        else if (key == 'type')
-                        {
+                        else if (key == 'type') {
                             if (!tmp.id) {
                                 if (state == 1)
                                     this.list.push(tmp);
@@ -557,53 +1016,24 @@
                             }
 
                             tmp.type = value;
-                            if (tmp.type == 'video' || tmp.type == 'audio')
-                            {
+                            if (tmp.type == 'video' || tmp.type == 'audio') {
                                 tmp.processor = this.processor;
                             }
                         }
-                        else if (key == 'version' && state == 1)
-                            tmp.version=value;
-                        else if (key == 'name')
-                            tmp.name=value;
-                        else if (key == 'date')
-                            tmp.date=value;  
-                        else if (key == 'thumb')
-                            tmp.thumb=value;
-                        else if (key == 'icon')
-                            tmp.icon=value;    
-                        else if (key == 'URL')
-                            tmp.URL=value;
-                            /*else if (key == 'DLloc')
-                        tmp.DLloc=value;*/
-                        else if (key == 'background')
-                            tmp.background=value;
-                        else if (key == 'rating')
-                            tmp.rating=value;
-                        else if (key == 'infotag')
-                            tmp.infotag=value;                        
-                        else if (key == 'view')
-                            tmp.view=value;  
-                        else if (key == 'processor')
-                            tmp.processor=value;
-                        else if (key == 'playpath')
-                            tmp.playpath=value;
-                        else if (key == 'swfplayer')
-                            tmp.swfplayer=value;    
-                        else if (key == 'pageurl')
-                            tmp.pageurl=value;   
-                        else if (key == 'description')
-                        {
-                            //this.description = ' ' //this will make the description field visible
+                        else if (key == 'description') {
+                                //this.description = ' ' //this will make the description field visible
                             index = value.indexOf('/description');
                             if (index != -1)
-                                tmp.description=value.slice(0, index);
-                            else
-                            {
-                                tmp.description=value;
+                                tmp.description = value.slice(0, index);
+                            else {
+                                tmp.description = value;
                                 state = 3; //description on more lines 
                             }
                         }
+                        else if (state == 0)
+                            this[key] = value;
+                        else if (state == 1)
+                            tmp[key] = value;
                     }
                 }
             }
@@ -620,7 +1050,7 @@
         this.parseRSS = function() {
             var result = {};
 
-            if (this.path.slice(0,6) == 'rss://')      
+            if (this.path.slice(0,6) == 'rss://')
                 this.path = this.path.replace('rss:', 'http:')
 
             var content = downloader.getRemote(this.path).response;
@@ -1219,7 +1649,7 @@
             else
                 this.path = this.mediaitem.URL;
 
-            var type = this.mediaitem.GetType(0);
+            var type = GetType(this.mediaitem, 0);
 
             var result = {};
 
@@ -1259,50 +1689,27 @@
         this.showPage = function(type) {
             this.type = type;
 			
-            //display the new URL on top of the screen
-            var title = '';
-            if (this.title.length > 0)
-                title = this.title  + ' - (' + this.path + ')';
-            else
-                title = this.URL;
-			
-            var title_final = "";
-            var renew=0;
-            page.metadata.title = title;
-            var tmp_title3 = '';
-            if (title) {
-                while(title.indexOf('[COLOR=FF') != -1)
-                {
-                    var color_index = title.indexOf('[COLOR=FF');
-                    var color = title.slice(color_index+9, title.indexOf(']', color_index));
-                    var text = title.slice(title.indexOf(']', color_index)+1, title.indexOf('[/COLOR]'));
-                    title = title.toString().replace(title.toString().slice(color_index, title.indexOf(']', color_index)+1), '');
-                    title = title.toString().replace(title.toString().slice(color_index, title.indexOf('[/COLOR]')+8), '');
-                    var tmp_title1 = title.slice(0, color_index);
-                    tmp_title3 = title.slice(title.indexOf('[/COLOR]')+8, title.length);
-                    var tmp_title2 = text;
-                    title_final+='<font color="#ffffff" size="2">'+tmp_title1+'</font>'+
-			    '<font color="'+color+'" size="2">'+tmp_title2+'</font>';
-                    renew=1;
-                }
+            //remove the [COLOR] tags from the name
+            var reg1 = new RegExp(/\[.*?\]/g);
+            var t = this.title.replace(reg1, '');
+            page.metadata.title = new showtime.RichText(t);
+
+            if (t.toLowerCase().indexOf("movie") != -1 || t.toLowerCase().indexOf("films") != -1) {
+                page.metadata.childTilesX = 6;
+                page.metadata.childTilesY = 2;
             }
-            if (renew)
-                page.metadata.title = new showtime.RichText(title_final+'<font color="#ffffff" size="2">'+tmp_title3+'</font>');
 			
             //set the background image   
-            if (service.backgroundEnabled == "1") {
+            if (service.backgroundEnabled == "1" && this.background != "default" && this.background != "previous") {
                 var m = this.background;
-                if (m == "default" || m == "previous")
-                    m = background_image1;
                 page.metadata.background = m;
             }
 			
-            m = this.logo;
-            page.metadata.logo = m;
+            /*m = this.logo;
+            page.metadata.logo = m;*/
 			
             /*var newview = SetListView(playlist.view);
-        page.contents = newview;*/
-            page.contents = 'list';
+            page.contents = newview;*/
 			
             //Display the playlist page
             var page_size = 200;
@@ -1328,16 +1735,25 @@
                 this.name = playlist_details[2];
             }
 
-            page.appendItem(PREFIX + ':playlist:screen', "directory", {
+            /*page.appendItem(PREFIX + ':playlist:screen', "directory", {
                 title: new showtime.RichText('Playlist Features')
-            });
+            });*/
+
+            if (!this.list) {
+                page.error("Invalid result.");
+                return;
+            }
+
+            if (this.list.length == 0) {
+                page.error("No entries in this playlist.");
+                return;
+            }
 
             for (var i = current_page*page_size; i < this.list.length; i++)
             {
                 var m = this.list[i];
-                if (parseInt(m.version) <= parseInt(plxVersion))
-                {
-                    if (!server.authenticated() && (m.URL === 'history.plx' ||  m.URL === 'favorites.plx' || m.URL === 'My Playlists' || m.URL === 'http://www.navixtreme.com/playlist/mine.plx'))
+                if (parseInt(m.version) <= parseInt(plxVersion)) {
+                    if (server && !server.authenticated() && m.URL === 'My Playlists' || m.URL === 'http://www.navixtreme.com/playlist/mine.plx')
                         continue;
 
                     if (m.type === 'window' || m.type === 'html')
@@ -1345,21 +1761,21 @@
 
                     var icon = this.getPlEntryThumb(m);
 
-                    var label2='';
+                    var label2 = '';
                     if (m.date != '') {
-                        try{
+                        try {
                             var dt = m.date.split()
-                            var size = dt.length                       
+                            var size = dt.length
                             var dat = dt[0].split('-')
                             var tim;
                             if (size > 1)
                                 tim = dt[1].split(':')
                             else
                                 tim = ['00', '00', '00']
-							
-                            var entry_date = new Date(dat[0],dat[1],dat[2],tim[0],tim[1],tim[2])
-                            var days_past = (today.getDate()-entry_date.getDate())
-                            var hours_past = MAt (today.getHours()-entry_date.getHours())
+
+                            var entry_date = new Date(dat[0], dat[1], dat[2], tim[0], tim[1], tim[2])
+                            var days_past = (today.getDate() - entry_date.getDate())
+                            var hours_past = Math(today.getHours() - entry_date.getHours())
                             if ((size > 1) && (days_past == 0) && (hours_past < 24))
                                 label2 = 'New ' + hours_past + ' hrs ago';
                             else if (days_past <= 10)
@@ -1370,107 +1786,189 @@
                                 else
                                     label2 = 'New ' + days_past + ' days ago'
                             else if (this.playlist.type != 'playlist')
-                                label2 = m.date.slice(0,10);
+                                label2 = m.date.slice(0, 10);
                         }
-                        catch(err) {
-                            showtime.trace("ERROR: Playlist contains invalid date at entry:  "+(n+1));
+                        catch (err) {
+                            showtime.trace("ERROR: Playlist contains invalid date at entry:  " + (n + 1));
                         }
                     }
-					
+
                     var link = m.URL;
+
                     if (link === 'My Playlists') {
                         link = 'http://www.navixtreme.com/playlist/mine.plx';
                         m.type = 'playlist';
                         m.name = 'My Playlists';
                     }
                     else if (link === 'favorites.plx') {
-                        link = 'http://www.navixtreme.com/playlist/' + server.favorites_id + '/favorites.plx';
+                        link = "store://favorites";
                     }
                     else if (link === 'history.plx') {
-                        link = 'http://www.navixtreme.com/playlist/' + server.history_id + '/history.plx';
+                        link = "store://history";
                     }
-					
-                    var name_final_color = '';
-                    var name = m.name.replace(' (local disk)', '');
 
-                    var tmp_name3 = '';
-                    var renew = 0;
-                    while(name.indexOf('[COLOR=FF') != -1)
-                    {
-                        var color_index = name.indexOf('[COLOR=FF');
-                        var color = name.slice(color_index+9, name.indexOf(']', color_index));
-                        var text = name.slice(name.indexOf(']')+1, name.indexOf('[/COLOR]'));
-                        var tmp_name1 = name.slice(0, color_index);
-                        var tmp_name2 = text;
-                        tmp_name3 = name.slice(name.indexOf('[/COLOR]')+8, name.length);
-                        name = name.toString().replace(name.toString().slice(color_index, name.indexOf(']', color_index)+1), '');
-                        name = name.toString().replace(name.toString().slice(color_index, name.indexOf('[/COLOR]')+8), '');
-                        name_final_color+=tmp_name1+
-							'<font color="'+color+'">'+tmp_name2+'</font>';
-                        renew=1;
-                    }
-                    if (!renew)
-                        name_final_color = m.name;
-                    if (m.type == "video" || m.type == "audio" || m.type == "playlist")
-                        name_final_color+=tmp_name3;
-                    if (label2 != '')
-                        name_final_color+='<font color="#ADFF2F">'+' ('+label2+')'+'</font>';
+                    var name_final_color = '';
+                    var name = m.name;
+
+                    name_final_color = parse_string_color(name, 3);
+
                     var playlist_link = escape(m.type);
-                    playlist_link+=":"+escape(link);
+                    playlist_link += ":" + escape(link);
 
                     if (!m.processor)
                         m.processor = 'undefined';
 
-                    var titleText = '\n';
-                    if (m.URL)
-                        titleText += '<font size="2" color="87cefa">' + 'URL: ' + m.URL + '</font>';
-                    if (m.URL)
-                        titleText += '\n<font size="2" color="87cefa">' + 'Processor: ' + m.processor + '</font>';
-                        
-                    var metadataTitle = new showtime.RichText(name_final_color + titleText);
+                    var metadataTitle = new showtime.RichText(name_final_color);
+
+                    var seen = 0;
+                    /*if (store.played_video_ids[m.id] && store.played_video_ids[m.id] == "No processing errors found") {
+                        seen = 1;
+                    }*/
+
+                    var item;
 
                     switch (m.type) {
                         case "image":
-                            page.appendItem(link,"image", {title: new showtime.RichText(name_final_color), icon: icon});
+                            item = page.appendItem(link, "image", { title: new showtime.RichText(name_final_color), icon: icon, seen: seen, info: false });
                             break;
                         case "audio":
-                            page.appendItem(link,"audio", {title: new showtime.RichText(name_final_color), icon: icon});
+                            item = page.appendItem(link, "audio", { title: new showtime.RichText(name_final_color), icon: icon, seen: seen, info: false });
                             break;
                         case "video":
                             if (link.indexOf('youtube.com') != -1) {
                                 var regex = new RegExp("youtu(?:\.be|be\.com)/(?:.*v(?:/|=)|(?:.*/)?)([a-zA-Z0-9-_]+)");
                                 var id = regex.exec(m.URL);
 
-                                page.appendItem('youtube:video:simple:' + escape(m.name) + ":" + escape(id[1]),"directory", {
-                                    title: metadataTitle, icon: icon});
-                            }
-                            else if (service.advanced != "1") {
-                                page.appendItem(PREFIX + ':video:' + escape(m.name) + ":" + escape(link) + ":" + escape(m.processor),"video", {
-                                    title: metadataTitle, 
-                                    icon: icon,
-                                    description: m.description
+                                item = page.appendItem('youtube:video:simple:' + escape(m.name) + ":" + escape(id[1]), "directory", {
+                                    title: metadataTitle, icon: icon, seen: seen, info: false
                                 });
                             }
                             else {
-                                page.appendItem(PREFIX + ':videoscreen:' + i,"video", {
-                                    title: metadataTitle, 
-                                    icon: icon,
-                                    description: m.description,
-                                    year: 2011
-                                });
+                                if (m.processor != "undefined") {
+                                    item = page.appendItem(PREFIX + ':video:' + i + ':' + escape(m.name) + ':' + escape(link) + ":" + escape(m.processor), "movie", {
+                                        title: metadataTitle,
+                                        icon: icon,
+                                        description: m.description,
+                                        seen: seen,
+                                        url: link,
+                                        processor: m.processor,
+                                        info: true
+                                    });
+                                }
+                                else {
+                                    item = page.appendItem(link, "video", {
+                                        title: metadataTitle,
+                                        icon: icon,
+                                        description: m.description,
+                                        seen: seen,
+                                        url: link,
+                                        info: true
+                                    });
+                                }
                             }
                             break;
                         case "text":
-                            page.appendItem(PREFIX + ':text:' + escape(m.name) + ':' + escape(m.URL),"directory", {
-                                title: new showtime.RichText(name_final_color), icon: icon});
-                            break;
-                        default:
-                            page.appendItem(PREFIX + ':playlist:' + playlist_link,"directory", {
-                                title: new showtime.RichText(name_final_color),
-                                icon: icon
+                            item = page.appendItem(PREFIX + ':text:' + escape(m.name) + ':' + escape(m.URL), "directory", {
+                                title: new showtime.RichText(name_final_color), icon: icon, seen: seen, info: false
                             });
                             break;
-							
+                        case "imdb":
+                            item = page.appendItem(PREFIX + ':tmdb:' + m.ID + ':2', "video", {
+                                title: new showtime.RichText(name_final_color),
+                                icon: icon,
+                                seen: seen,
+                                id: m.ID,
+                                service: "IMDB",
+                                info: true
+                            });
+                            break;
+                        case "tmdb":
+                            item = page.appendItem(PREFIX + ':tmdb:' + m.ID + ':1', "video", {
+                                title: new showtime.RichText(name_final_color),
+                                icon: icon,
+                                seen: seen,
+                                id: m.ID,
+                                service: "TMDB",
+                                info: true
+                            });
+                            break;
+                        default:
+                            item = page.appendItem(PREFIX + ':playlist:' + playlist_link, "directory", {
+                                title: new showtime.RichText(name_final_color),
+                                icon: icon,
+                                seen: seen,
+                                hidden: true
+                            });
+                            break;
+
+                    }
+
+                    item.id = i;
+
+                    if (m.type == "video") {
+                        if (m.TMDB && m.TMDB != "")
+                            item.addOptURL("TMDB View", PREFIX + ':tmdb:' + m.TMDB + ":1");
+                        else if (m.IMDB && m.IMDB != "")
+                            item.addOptURL("TMDB View", PREFIX + ':tmdb:' + m.IMDB + ":2");
+                        else
+                            item.addOptURL("TMDB View", PREFIX + ':tmdb:' + m.name + ":0");
+
+                        item.addOptSeparator("Playlists");
+                    }
+                    
+                    /*item.addOptAction("Add to Playlist", "addToPlaylist");
+
+                    item.onEvent('addToPlaylist', function (item) {
+                        var titleInput = showtime.textDialog('Title of Playlist: ', true, true);
+
+                        if (titleInput.rejected) {
+                            return;
+                        }
+                        try {
+                            var title = titleInput.input;
+                            if (title.length == 0) {
+                                return;
+                            }
+
+                            if (server.addToPlaylist(title, playlist.list[this.id]))
+                                showtime.notify('Entry was added syccesfully to the playlist ' + title + '.', 3);
+                            else
+                                showtime.notify('There was one error while trying to add this entry to the playlist', 3);
+                        }
+                        catch (ex) { showtime.notify(ex); }
+                    });*/
+
+                    if (m.type == "video" || m.type == "image" || m.type == "audio" || m.type == "playlist") {
+                        var exist = store.exist_in_playlist('favorites', playlist.list[i]);
+                        if (!exist.found)
+                            item.addOptAction("Add to local favorites", "addFavorite");
+                        else
+                            item.addOptAction("Remove from local favorites", "removeFavorite");
+
+                        item.onEvent('addFavorite', function (item) {
+                            if (!store.exist_in_playlist('favorites', playlist.list[this.id]).found) {
+                                if (store.add_to_playlist("favorites", playlist.list[this.id])) {
+                                    showtime.notify('Entry was added syccesfully to the playlist Favorites.', 3);
+                                }
+                                else
+                                    showtime.notify('There was one error while trying to add this entry to the playlist', 3);
+                            }
+                            else {
+                                showtime.notify('Item was already added to Favorites.', 3);
+                            }
+                        });
+
+                        item.onEvent('removeFavorite', function (item) {
+                            if (store.exist_in_playlist('favorites', playlist.list[this.id]).found) {
+                                if (store.remove_from_playlist("favorites", playlist.list[this.id]))
+                                    showtime.notify('Entry was removed syccesfully to the playlist Favorites.', 3);
+                                else
+                                    showtime.notify('There was one error while trying to remove this entry to the playlist', 3);
+                            }
+                            else {
+                                showtime.notify('The item doesn\'t exist in Favorites.', 3);
+                            }
+                        });
                     }
                 }
             }
@@ -1478,8 +1976,8 @@
 
         this.getPlEntryThumb = function(mediaitem)
         {
-            var type = mediaitem.GetType();   
-		
+            var type = GetType(mediaitem);
+
             //some types are overruled.
             if (type.slice(0,3) == 'rss')
                 type = 'rss';
@@ -1511,10 +2009,17 @@
         this.haveVideoUrl = false;
         this.error = false;
         this.message = '';
+        this.source = '';
 
         this.phase = 1;
 
+        this.cached = false;
+
         var init = new Date();
+
+        this.ifparse = new RegExp('^([^<>=!]+)\s*([!<>=]+)\s*(.+)$');
+        this.conditionExtract = new RegExp('\(\s*([^\(\)]+)\s*\)');
+        this.multiIfTest = new RegExp(/^\(/);
 
         this.concat = function(line) {
             var regex = new RegExp('([^ ]+)[ ]([^ ]+)[ =](.+)');
@@ -1524,8 +2029,10 @@
             var value = params[3];
             var append = true;
 
-            showtime.trace('Proc debug concat:');
-            showtime.print('old: ' + this.NIPL.vars[key]);
+            if (service.verbose == '1') {
+                showtime.trace('Proc debug concat:');
+                showtime.print('old: ' + this.NIPL.vars[key]);
+            }
         
             if (value[0] == "'") {
                 value = value.slice(1);
@@ -1536,11 +2043,13 @@
 
             this.NIPL.setValue(key, value, append);
 
-            showtime.print('new: ' + this.NIPL.vars[key]);
+            if (service.verbose == '1') {
+                showtime.print('new: ' + this.NIPL.vars[key]);
+            }
         }
 
         // From NP's Megaviewer
-        this.countdown = function(line) { 
+        this.countdown = function(page, line) { 
             var regex = new RegExp('([^ ]+)[ ](.+)');
             var params = regex.exec(line);
 
@@ -1549,10 +2058,12 @@
                 time = time.slice(1);
 
             showtime.print('Loading video...');
-            for (var j = 0; j < parseInt(time); j++){
-                showtime.print('Waiting ' + (time-j) + ' seconds');
+            for (var j = 0; j < parseInt(time) ; j++) {
+                page.metadata.title = this.NIPL.vars['countdown_title'] + ' - Waiting ' + (time - j) + ' seconds';
+                showtime.print('Waiting ' + (time - j) + ' seconds');
                 showtime.sleep(1000);
             }
+            page.metadata.title = 'Processing...';
         }
 
         this.debug = function(line) { 
@@ -1569,12 +2080,8 @@
             if (error[0] == "'")
                 error = error.slice(1);
 
-            var end = new Date();
-            var time = end - init;
-
-            showtime.trace('Processor error: ' + error + ' (' + time + 'ms)');
             this.error = true;
-            this.message = 'Processor error: ' + error + ' (' + time + 'ms)';
+            this.message = 'Processor error: ' + error;
 
             store.add_report_processor(mediaitem.URL, mediaitem.processor, error);
         }
@@ -1630,14 +2137,18 @@
                 delete this.NIPL.vars['nomatch'];
             }
 
-            if (match)
-                showtime.trace('Processor match ' + key + ':');
-            else
-                showtime.trace('Processor match ' + key + ':' + ' no match');
+            if (service.verbose == '1') {
+                if (match)
+                    showtime.trace('Processor match ' + key + ':');
+                else {
+                    showtime.trace('Processor match ' + key + ':' + ' no match');
+                    showtime.print('regex: ' + regex + '\nsearch: ' + value);
+                }
 
-            for (var v in this.NIPL.vars) {
-                if (v && typeof v == 'string' && v[0] === 'v' && parseInt(v.slice(1)) != NaN) {
-                    showtime.print(v + '=' + this.NIPL.vars[v]);
+                for (var v in this.NIPL.vars) {
+                    if (v && typeof v == 'string' && v[0] === 'v' && parseInt(v.slice(1)) != NaN) {
+                        showtime.print(v + '=' + this.NIPL.vars[v]);
+                    }
                 }
             }
 
@@ -1663,8 +2174,10 @@
                     this.NIPL.vars.videoUrl += ' swfVfy='+this.NIPL.vars['swfVfy'];
             }
 
-            showtime.trace('Processor final result:');
-            showtime.print('URL: ' + this.NIPL.vars['videoUrl']);
+            if (service.verbose == '1') {
+                showtime.trace('Processor final result:');
+                showtime.print('URL: ' + this.NIPL.vars['videoUrl']);
+            }
 
             this.haveVideoUrl = true;
 
@@ -1683,8 +2196,6 @@
         this.print = function(line) {
             var params = line.split(' ');
             if (params.length === 2) {
-                if (params[1] == 'htmRaw')
-                    return;
                 this.debug('debug ' + params[1]);
             }
             else {
@@ -1712,15 +2223,19 @@
 
             var regex_match = new RegExp(this.NIPL.vars['regex'], "g");
 
-            showtime.trace('Proc debug replace src:');
-            showtime.print('key: ' + key + '\nregex: ' + regex_match + '\nvalue: ' + value);
-            showtime.print('old: ' + this.getVariableValue(key));
+            if (service.verbose == '1') {
+                showtime.trace('Proc debug replace src:');
+                showtime.print('key: ' + key + '\nregex: ' + regex_match + '\nvalue: ' + value);
+                showtime.print('old: ' + this.getVariableValue(key));
+            }
 
             if (!this.NIPL.vars[key])
                 this.NIPL.vars[key]  = "";
             this.NIPL.vars[key] = this.NIPL.vars[key].replace(regex_match, value);
 
-            showtime.print('new: ' + this.getVariableValue(key));
+            if (service.verbose == '1') {
+                showtime.print('new: ' + this.getVariableValue(key));
+            }
 
             this.NIPL.vars['regex'] = "";
 
@@ -1732,8 +2247,11 @@
                 'phase': this.phase
             };
 
-            showtime.trace('Processor report:');
-            showtime.print('phase: ' + this.phase);
+            if (service.verbose == '1') {
+                showtime.trace('Processor report:');
+                showtime.print('phase: ' + this.phase);
+            }
+
             for (var v in this.NIPL.vars) {
                 if (v && typeof v == 'string' && v[0] === 'v' && parseInt(v.slice(1)) != NaN) {
                     //showtime.print(v + ': ' + this.NIPL.vars[v]);
@@ -1747,7 +2265,10 @@
 
             this.phase += 1;
 
-            showtime.trace('Processor: phase ' + this.phase + ' learn');
+            if (service.verbose == '1') {
+                showtime.trace('Processor: phase ' + this.phase + ' learn');
+            }
+
             return this.getUrl(page, mediaitem, args);
         };
     
@@ -1765,8 +2286,10 @@
 
             this.NIPL.vars.reports[key] = value;
 
-            showtime.trace('Processor debug report value: ' + key + ' set to string literal');
-            showtime.print(this.NIPL.vars.reports[key]);
+            if (service.verbose == '1') {
+                showtime.trace('Processor debug report value: ' + key + ' set to string literal');
+                showtime.print(this.NIPL.vars.reports[key]);
+            }
         }
     
         this.scrape = function() {
@@ -1790,17 +2313,19 @@
 
             var data = downloader.getRemote(this.NIPL.vars['s_url']);
         
-            //showtime.print(data.response);
             this.NIPL.vars['htmRaw'] = data.response;
 
             if (this.NIPL.vars['s_method'] != 'geturl' && this.NIPL.vars['s_action'] != 'headers') {
-                showtime.trace('Processor debug headers:');
+                if (service.verbose == '1')
+                    showtime.trace('Processor debug headers:');
                 for (var hdr in data.headers) {
-                    showtime.print(hdr + ': ' + data.headers[hdr]);
+                    if (service.verbose == '1')
+                        showtime.print(hdr + ': ' + data.headers[hdr]);
                     this.NIPL.vars.headers[hdr] = data.headers[hdr];
                 }
 
-                showtime.trace('Processor debug cookies:');
+                if (service.verbose == '1')
+                    showtime.trace('Processor debug cookies:');
                 if (data.multiheaders['Set-Cookie']) {
                     for (var hdr in data.multiheaders['Set-Cookie']) {
                         var header = data.multiheaders['Set-Cookie'][hdr].toString();
@@ -1811,13 +2336,17 @@
                             var key = params[0];
                             var value = params[1];
                             this.NIPL.vars['cookies'][key] = value;
-                            showtime.print(key + ': ' + value);
+
+                            if (service.verbose == '1')
+                                showtime.print(key + ': ' + value);
                         }
                     }
                 }
 
                 if (this.NIPL.vars['regex'] != '') {
-                    showtime.trace('Processor scrape:');
+                    if (service.verbose == '1')
+                        showtime.trace('Processor scrape:');
+
                     this.match('match htmRaw');
 
                     if (this.NIPL.vars['nomatch'] && this.NIPL.vars['nomatch'] == '1')
@@ -1836,11 +2365,14 @@
             }
             else if (this.NIPL.vars['s_action'] == 'headers') {
                 for (var hdr in data.headers) {
-                    showtime.print(hdr + ': ' + data.headers[hdr]);
+                    if (service.verbose == '1')
+                        showtime.print(hdr + ': ' + data.headers[hdr]);
+
                     this.NIPL.vars.headers[hdr] = data.headers[hdr];
                 }
 
-                showtime.trace('Processor debug cookies:');
+                if (service.verbose == '1')
+                    showtime.trace('Processor debug cookies:');
                 if (data.multiheaders['Set-Cookie']) {
                     for (var hdr in data.multiheaders['Set-Cookie']) {
                         var header = data.multiheaders['Set-Cookie'][hdr].toString();
@@ -1851,7 +2383,9 @@
                             var key = params[0];
                             var value = params[1];
                             this.NIPL.vars['cookies'][key] = value;
-                            showtime.print(key + ': ' + value);
+
+                            if (service.verbose == '1')
+                                showtime.print(key + ': ' + value);
                         }
                     }
                 }
@@ -1874,12 +2408,15 @@
         this.unescape = function(line) { 
             var params = line.split(' ');
 
-            showtime.trace('Proc debug unescape:');
-            showtime.print('old: ' + this.NIPL.vars[params[1]]);
+            if (service.verbose == '1') {
+                showtime.trace('Proc debug unescape:');
+                showtime.print('old: ' + this.NIPL.vars[params[1]]);
+            }
 
             this.NIPL.vars[params[1]] = unescape(this.NIPL.vars[params[1]]);
 
-            showtime.print('new: ' + this.NIPL.vars[params[1]]);
+            if (service.verbose == '1')
+                showtime.print('new: ' + this.NIPL.vars[params[1]]);
         }
     
         this.verbose = function(line) { 
@@ -1911,30 +2448,23 @@
                 if (oper === '<>')
                     oper = '!=';
 
-                var els = key.split('.');
-                if (els.length > 1) {
-                    keys = "['";
-                    for (var i = 0; i < els.length; i++) {
-                        var el = els[i];
-                        keys += el + "']";
-                        if (i < els.length - 1)
-                            keys += "['";
+                try {
+                    this.NIPL.vars[key]
+                }
+                catch (ex) { this.NIPL.vars[key] = ""; }
+
+                try {
+                    result = eval("this.NIPL.vars[key]" + oper + "value");
+                }
+                catch (ex) { result = false; }
+
+                if (service.verbose == '1') {
+                    showtime.trace('Proc debug if => ' + result + ':');
+                    showtime.print('test: ' + key + ' ' + oper + ' ' + params[3]);
+                    if (this.NIPL.vars[key]) {
+                        showtime.print('left: ' + this.NIPL.vars[key]);
+                        showtime.print('right: ' + value);
                     }
-
-                    result = eval("this.NIPL.vars" + keys + oper + "'" + value + "'");
-                }
-                else {
-                    if (!this.NIPL.vars[key])
-                        this.NIPL.vars[key] = "";
-
-                    result = eval("this.NIPL.vars['" + key + "']" + oper + "'" + value + "'");
-                }
-
-                showtime.trace('Proc debug if => ' + result + ':');
-                showtime.print('test: ' + key + ' ' + oper + ' ' + params[3]);
-                if (this.NIPL.vars[key]) {
-                    showtime.print('left: ' + this.NIPL.vars[key]);
-                    showtime.print('right: ' + value);
                 }
             }
             else {
@@ -1945,12 +2475,17 @@
 
                 result = exist;
 
-                showtime.trace('Proc debug if => ' + result + ':');
-                if (this.NIPL.vars[params[1]])
-                    showtime.print(params[1] + " > '': " + this.NIPL.vars[params[1]]);
-                else
-                    showtime.print(params[1] + " = ''");
+                if (service.verbose == '1') {
+                    showtime.trace('Proc debug if => ' + result + ':');
+                    if (this.NIPL.vars[params[1]])
+                        showtime.print(params[1] + " > '': " + this.NIPL.vars[params[1]]);
+                    else
+                        showtime.print(params[1] + " = ''");
+                }
             }
+
+            // TODO: Multiple variable test
+            // if v1 && test != 'null || foo == 'bar
 
             return result;
         }
@@ -1960,8 +2495,9 @@
                 var keys = "['" + key + "']";
                 if (key.indexOf('.') != -1) {
                     keys = '';
-                    for each (var k in key.split('.')) {
-                    keys +="['" + k + "']";
+                    for  (var i in key.split('.')) {
+                        var k = key.split('.')[i];
+                        keys +="['" + k + "']";
                     }
                 }
 
@@ -1981,80 +2517,120 @@
             if (value[0] == "'") {
                 value = value.slice(1);
 
-                showtime.trace('Proc debug variable: ' + key + ' set to string literal');
-                showtime.print(value);
+                if (service.verbose == '1') {
+                    showtime.trace('Proc debug variable: ' + key + ' set to string literal');
+                    showtime.print(value);
+                }
             }
             else {
-                showtime.trace('Proc debug variable: ' + key +' set to ' + value);
+                if (service.verbose == '1')
+                    showtime.trace('Proc debug variable: ' + key +' set to ' + value);
 
                 if (!this.NIPL.vars[value])
                     this.NIPL.vars[value] = '';
-                showtime.print(this.NIPL.vars[value]);
+
+                if (service.verbose == '1')
+                    showtime.print(this.NIPL.vars[value]);
+
                 value = this.NIPL.vars[value];
             }
 
             this.NIPL.setValue(key, value);
         }
 
-        this.getUrl = function(page, mediaitem, args) {
+        this.getUrl = function(page, mediaitem, args, local) {
             var message = '';
+            var data = {};
 
-            var if_result = false;
+            /*var if_result = false;
             var if_init = false;
             var if_end = false;
-            var if_satisfied = false;
+            var if_satisfied = false;*/
 
-            var link = mediaitem.processor + '?';
+            var if_stack = [];
+            var if_stacklen = 0;
 
-            var postdata = 'url=' + escape(mediaitem.URL);
-
-            if (args) {
-                for (var el in args) {
-                    if (el == 'phase') postdata += '&' + el + '=' + this.phase;
-                    else postdata += '&' + el + '=' + escape(args[el]);
+            if (!local) {
+                var store_processor_tmp = plugin.createStore("processors/" + ProcessorLocalFilename(mediaitem.processor), true);
+                if (service.cachingProcessors == '1' && store_processor_tmp && store_processor_tmp.source && store_processor_tmp.expires) {
+                    if (new Date() > new Date(store_processor_tmp.expires)) {
+                        store_processor_tmp = {};
+                    }
+                    else {
+                        data.response = store_processor_tmp.source;
+                        this.cached = true;
+                    }
                 }
+
+                var link = mediaitem.processor + '?';
+
+                var postdata = 'url=' + escape(mediaitem.URL);
+
+                if (args) {
+                    for (var el in args) {
+                        if (el == 'phase') postdata += '&' + el + '=' + this.phase;
+                        else postdata += '&' + el + '=' + escape(args[el]);
+                    }
+                }
+
+                link += postdata;
+                showtime.print(link);
+                this.NIPL.vars['s_postdata'] = postdata;
+
+                if (this.phase > 1)
+                    this.NIPL.vars['s_method'] = 'post';
+
+                this.NIPL.vars['s_cookie'] = 'version=' + version + '; platform=Showtime';
+
+                data = this.downloader.getRemote(link, args);
+
+                if (data.error || data.response == '') {
+                    var end = new Date();
+                    var time = end - init;
+
+                    if (data.error) {
+                        message = data.error + ' (' + time + 'ms)';
+                    }
+                    if (data.response == '') {
+                        message = 'The processor for this video is empty' + ' (' + time + 'ms)';
+                    }
+
+                    var result = {
+                        error: true,
+                        message: message
+                    };
+                    return result;
+                }
+
+                data = data.response;
             }
-
-            link += postdata;
-            showtime.print(link);
-            this.NIPL.vars['s_postdata'] = postdata;
-
-            if (this.phase > 1)
-                this.NIPL.vars['s_method'] = 'post';
-
-            var data = this.downloader.getRemote(link, args);
-
-            if (data.error || data.response == '') {
-                var end = new Date();
-                var time = end - init;
-
-                if (data.error) {
-                    message = ex + ' (' + time + 'ms)';
-                }
-                if (data.response == '') {
-                    message = 'The processor for this video is empty' + ' (' + time + 'ms)';
-                }
-
-                var result = {
-                    error: true,
-                    message: message
-                };
-                return result;
+            else {
+                data = local;
             }
-
-            data = data.response;
 
             if (this.phase == 1) {
                 var version = data.slice(0, 2);
-                showtime.trace('Processor: phase 1 - query');
-                showtime.print('URL: ' + mediaitem.URL);
-                showtime.print('Processor: ' + mediaitem.processor);
+                if (service.verbose == '1') {
+                    showtime.trace('Processor: phase 1 - query');
+                    showtime.print('URL: ' + mediaitem.URL);
+                    showtime.print('Processor: ' + mediaitem.processor);
+                }
             }
 
             if (this.phase > 1 || version == "v2") {
                 var lines = data.split('\n');
+                var if_bypass = 0;
 
-                for (var i = 0; i < lines.length; i++) {
+                var eof = lines.length;
+                if (eof < 1)
+                    this.error("error 'nothing returned from phase " + str(phase));
+
+                var linenum = -1;
+                while (linenum < eof) {
+                    linenum += 1;
+                    var i = linenum;
+                    //Note: while loop will need to set linenum to linenum-1 since it is incremented at start of block
+                    page.metadata.title = 'Processing... Phase: ' + this.phase + '; Line: ' + (i + 1);
                     if (this.haveVideoUrl && !this.error) {
                         break;
                     }
@@ -2062,36 +2638,75 @@
                         break;
                     }
 
+                    // Remove unnecessary spaces in line
                     var line = lines[i].replace(/^\s*/, '').replace(/\s\s*$/, '');
-                    if (line.slice(0,1) == '#' || line.slice(0,2) == '//' || line == '')
+
+                    // Bypass empty or comment lines
+                    if (line.slice(0, 1) == '#' || line.slice(0, 2) == '//' || line == '')
                         continue;
 
-                    showtime.trace('Processor Line #' + i + ': ' + line);
+                    if (service.verbose == '1') {
+                        showtime.trace('Processor Line #' + (i + 1) + ': ' + line);
 
-                    var lparse=new RegExp('^([^ =]+)([ =])(.+)');
+                        if (if_stacklen > 0 && (if_stack[if_stack.length - 1]["if_next"] || if_stack[if_stack.length - 1]["if_satisfied"] || if_stack[if_stack.length - 1]["if_end"])) {
+                            var str_report = str_report + "\n (IF: satisfied=" + if_stack[if_stack.length - 1]["if_satisfied"] + ", skip to next=" + if_stack[if_stack.length - 1]["if_next"] + ", skip to end=" + if_stack[if_stack.length - 1]["if_end"] + ")";
+                            showtime.trace(str_report);
+                        }
+                    }
+
+                    if (if_stacklen > 0 && line.slice(0, 3) != 'if ' && line != 'endif' && line != 'endwhile') {
+                        if (if_stack[if_stack.length - 1]["if_end"] && line != 'endif' && line != 'endwhile') {
+                            if (service.verbose > 1)
+                                showtime.trace("    ^^^ skipped");
+                            continue;
+                        }
+
+                        if (if_stack[if_stack.length - 1]["if_next"] && line.slice(0, 6) != 'elseif' && line != 'else' && line != 'endif') {
+                            if (service.verbose > 1)
+                                showtime.trace("    ^^^ skipped");
+                            continue;
+                        }
+                    }
+
+                    if (line == 'else' && if_stacklen > 0) {
+                        if (if_stack[if_stack.length - 1]["if_satisfied"])
+                            if_stack[if_stack.length - 1]["if_end"] = true;
+                        else
+                            if_stack[if_stack.length - 1]["if_next"] = false;
+                        continue;
+                    }
+                    else if (line == 'endif' && if_stacklen > 0) {   // reset if params
+                        if_stack.pop();
+                        if_stacklen = if_stack.length;
+                        continue;
+                    }
+                    else if (line == 'endwhile' && if_stacklen > 0) {
+                            // process next loop iteration
+                        wresult = this.while_eval(if_stack[if_stack.length - 1]);
+                        if (wresult["error"])
+                            return this.error("error '" + wresult["message"]);
+                        if (verbose > 1)
+                            showtime.trace(wresult["message"]);
+                        if (wresult["match"])
+                            linenum = if_stack[if_stack.length - 1]["loopstart"];
+                        else {
+                            if_stack.pop();
+                            if_stacklen = if_stack.length;
+                            continue;
+                        }
+                    }
+
+
+                    var lparse = new RegExp('^([^ =]+)([ =])(.+)');
+                    // Initial check for the function in processor
                     var match = lparse.exec(line);
 
-                    if (if_init && if_satisfied && line != 'endif')
-                        continue;
-                    if (if_init && !if_result && !if_end && line != 'else' && line != 'endif' && line.indexOf('elseif') == -1) {
-                        continue;
-                    }
-                    else if (line == 'endif') {
-                        if_init = false;
-                        if_end = false;
-                        if_result = false;
-                        if_satisfied = false;
-                    }
-                    else if (line == 'else' && !if_result) {
-                        showtime.trace('Proc debug else: executing');
-                        if_result = true;
-                    }
-                    else if (line == 'else' || line.indexOf('elseif') != -1 && if_result && if_init) {
-                        if_satisfied = true;
-                        continue;
-                    }
-
                     if (match && match[2] === "=") {
+                        if (service.cachingProcessors == '1' && !this.cached && match[1] == 'cacheable' && match[3] == "'1") {
+                            var store_processor = plugin.createStore("processors/" + ProcessorLocalFilename(mediaitem.processor), true);
+                            store_processor.source = data;
+                            store_processor.expires = new Date(new Date().valueOf() + 1000 * 60 * 60 * 24).toString();
+                        }
                         this.setVariableValue(line);
                     }
                     else if (match && match[2] === " ") {
@@ -2102,7 +2717,7 @@
                             this.debug(line);
                         }
                         else if (match[1] == 'countdown') {
-                            this.countdown(line);
+                            this.countdown(page, line);
                         }
                         else if (match[1] == 'error') {
                             this.error(line);
@@ -2132,22 +2747,54 @@
                             this.verbose(line);
                         }
                         else if (match[1] === 'if' || match[1] === 'elseif') {
-                            var result = this.ifResult(line);
-                            if_init = true;
-                            if_result = result;
+                                /*var result = this.ifResult(line);
+                                if_init = true;
+                                if_result = result;*/
+
+                            if (if_stacklen > 0 && match[1] == 'elseif' && if_stack[if_stack.length -1]["if_satisfied"])
+                                if_stack[if_stack.length - 1]["if_end"] = true;
+                            else {
+                                if (match[1] == 'if') {
+                                    var if_skip = false;
+                                    if (if_stacklen > 0 && (if_stack[if_stack.length - 1]["if_satisfied"] == false || if_stack[if_stack.length - 1]["if_end"] == true))
+                                        if_skip = true;
+                                    if_stack.push({
+                                        "if_next": false,
+                                        "if_satisfied": false,
+                                        "if_end": if_skip
+                                    });
+                                    if_stacklen = if_stack.length;
+                                }
+                                var boolObj = this.if_eval(match[3]);
+                                if (boolObj["error"] == true)
+                                    this.error("error '" + boolObj["data"] + "\n" + line);
+                            }
+
+                            if (boolObj["data"] == true) {
+                                if_stack[if_stack.length - 1]["if_satisfied"] = true;
+                                if_stack[if_stack.length - 1]["if_next"] = false;
+                            }
+                            else
+                                if_stack[if_stack.length - 1]["if_next"] = true;
+
+                            if (service.verbose > 0)
+                                showtime.trace("Proc debug " + match[1] + " => " + boolObj["data"]);
+
+                            continue;
                         }
                         else {
-                            showtime.trace('Processor: Unknown function');
+                            if (service.verbose == '1')
+                                showtime.trace('Processor: Unknown function');
                         }
                     }
                     else if (line.indexOf(' ') == -1) {
                         if (line.slice(0, 7) == 'report') {
                             return this.report(page);
                         }
-                        else if (line.slice(0,4) == 'play') {
+                        else if (line.slice(0, 4) == 'play') {
                             return this.play();
                         }
-                        if (line.slice(0,6) == 'scrape') {
+                        if (line.slice(0, 6) == 'scrape') {
                             this.scrape();
                         }
                     }
@@ -2197,7 +2844,9 @@
                 else
                     cookie='';
 
-                showtime.trace(report);
+                if (service.verbose == '1')
+                    showtime.trace(report);
+
                 this.NIPL.vars['s_cookie'] = cookie;
                 this.NIPL.vars['s_referer'] = ref;
                 var htm = this.downloader.getRemote(URL).response;
@@ -2213,8 +2862,6 @@
                     var tgt = mediaitem.processor;
                     var sep = '?';
                     report = 'Processor: phase 3 - scrape and report';
-                    /*for i in range(1,len(match.groups())+1):
-                    val=urllib.quote_plus(match.group(i))*/
 
                     for (i in match) {
                         var val = escape(match[i]);
@@ -2223,7 +2870,9 @@
                         sep = '&';
                         report = report + "\n v" + i + ": " + val;
                     }
-                    showtime.trace(report);
+
+                    if (service.verbose == '1')
+                        showtime.trace(report);
                     var htmRaw2 = this.downloader.getRemote(tgt).response;
                     if (htmRaw2<='') {
                         result.error = true;
@@ -2276,6 +2925,146 @@
 
             return result;
         }
+
+        this.while_eval = function (if_obj) {
+            if_obj["execcount"] = if_obj["execcount"] + 1;
+            if (if_obj["execcount"] > 500) {
+                return {
+                    "error": true,
+                    "match": false,
+                    "message": "While loop exceeded maximum iteration count"
+                }
+            }
+            for (var i = 1; i < 11; i++) {
+                ke = 'v' + i;
+                this.NIPL.vars[ke] = '';
+            }
+            match = if_obj['regex'].exec(if_obj['haystack'].slice(if_obj['searchstart']));
+            rerep = 'Processor while iteration:';
+            if (!match) {
+                rerep += ' no match';
+                if_obj["if_end"] = true;
+                return {
+                    "error": false,
+                    "match": false,
+                    "message": rerep
+                }
+            }
+
+            if_obj["searchstart"] = if_obj["searchstart"];// + match.end();
+            for (var i in match) {
+                val = match[i];
+                if (!val)
+                    val = '';
+                key = 'v' + i;
+                rerep += "\n " + key + '=' + val;
+                this.NIPL.vars[key] = val;
+            }
+
+            return {
+                "error": false,
+                "match": true,
+                "message": rerep
+            }
+        }
+
+        this.if_eval = function(str_in) {
+            var match=this.multiIfTest.exec(str_in);
+            if (!match) {
+                // single condition request
+                return this.condition_eval(str_in);
+            }
+            else {
+                // multiple condition request
+                mflag = true;
+                while (mflag == true) {
+                    match = this.conditionExtract.exec(str_in);
+                    if (match) {
+                        cond = match[1];
+                        boolObj = this.condition_eval(cond);
+                        if (boolObj["error"] == true)
+                            return this.error("error '" + boolObj["data"]);
+
+                        if (boolObj["data"] == true)
+                            rep = '';
+                        else
+                            rep = '';
+                        str_in = str_in.replace(cond, rep);
+                    }
+                    else
+                        mflag = false;
+                }
+                str_in = str_in.replace('', 'true');
+                str_in = str_in.replace('', 'false');
+                try {
+                    bool = eval(str_in);
+                }
+                catch (ex) {
+                    return {
+                        "error": true,
+                        "data": ex
+                    }
+                }
+                return {
+                    "error": false,
+                    "data": bool
+                }
+            }
+        }
+
+        this.condition_eval = function (cond) {
+            var bool = false;
+            var rside = '';
+
+            var match = this.ifparse.exec(cond);
+            if (match) {
+                // process with operators
+                var lkey = match[1];
+                var oper = match[2];
+                var rraw = match[3];
+                if (oper == '=')
+                    oper = '==';
+                if (rraw.slice(0, 1) == "'")
+                    rside = rraw.slice(1);
+                else
+                    rside = this.NIPL.vars[rraw];
+
+                try {
+                    this.NIPL.vars[lkey]
+                }
+                catch (ex) { this.NIPL.vars[lkey] = ""; }
+
+                try {
+                    bool = eval("this.NIPL.vars[lkey]" + oper + "rside")
+                }
+                catch (ex) {
+                    return {
+                        "error": true,
+                        "data": ex
+                    }
+                }
+            }
+            else {
+                // process single if argument for >''
+                try {
+                    this.NIPL.vars[cond];
+                }
+                catch (ex) { this.NIPL.vars[cond] = '' }
+
+                try { bool = this.NIPL.vars[cond] > ''; }
+                catch (ex) {
+                    return {
+                        "error": true,
+                        "data": ex
+                    }
+                }
+            }
+
+            return {
+                "error": false,
+                "data": bool
+            }
+        }
     }
 
     function Downloader(processor) {
@@ -2290,6 +3079,8 @@
             if (args)
                 argsVar = args;
             var headers = {};
+
+            var url = filename;
 
             if (processor) {
                 if (processor.NIPL.vars['s_agent']) {
@@ -2307,18 +3098,24 @@
                 }
             }
 
+            if (url.indexOf(nxserver_URL) != -1 && server) {
+                headers['Cookie'] = headers['Cookie'] + '; nxid=' + server.user_id;
+            }
+
             var data = '';
 
             if (processor) {
-                showtime.trace('Processor ' + processor.NIPL.vars['s_method'].toString().toUpperCase() + '.' + processor.NIPL.vars['s_action'] + ': ' + filename);
-                showtime.trace('Proc debug remote args:');
-                showtime.trace("{'postdata': \'" + processor.NIPL.vars['s_postdata'] + "\', 'agent': '" + headers['User-Agent'] + "', 'headers': {}, 'cookie': '" + headers['Cookie'] + "', 'action': '" + 
+                if (service.verbose == '1') {
+                    showtime.trace('Processor ' + processor.NIPL.vars['s_method'].toString().toUpperCase() + '.' + processor.NIPL.vars['s_action'] + ': ' + url);
+                    showtime.trace('Proc debug remote args:');
+                    showtime.trace("{'postdata': \'" + processor.NIPL.vars['s_postdata'] + "\', 'agent': '" + headers['User-Agent'] + "', 'headers': {}, 'cookie': '" + headers['Cookie'] + "', 'action': '" +
                 processor.NIPL.vars['s_action'] + "', 'referer': '" + headers['Referer'] + "', 'method': '" + processor.NIPL.vars['s_method'] + "'}");
+                }
             }
 
             try {
                 if (processor && processor.NIPL.vars['s_method'] === 'get') {
-                    data = showtime.httpGet(filename, argsVar, headers, this.controls);
+                    data = showtime.httpGet(url, argsVar, headers, this.controls);
                 }
                 else if (processor && processor.NIPL.vars['s_method'] === 'post' && processor.NIPL.vars['s_postdata']) {
                     var arguments = {};
@@ -2334,13 +3131,13 @@
                         arguments[params_sub[0]] = unescape(params_sub[1]);
                     }
 
-                    data = showtime.httpPost(filename, arguments, null, headers, this.controls);
+                    data = showtime.httpPost(url, arguments, null, headers, this.controls);
                 }
                 else if (processor && processor.NIPL.vars['s_method'] === 'post' && !processor.NIPL.vars['s_postdata']) {
-                    data = showtime.httpPost(filename, argsVar, headers, this.controls);
+                    data = showtime.httpPost(url, argsVar, headers, this.controls);
                 }
                 else
-                    data = showtime.httpGet(filename, argsVar, headers, this.controls);
+                    data = showtime.httpGet(url, argsVar, headers, this.controls);
 
                 var response = data.toString();
                 var headersResponse = data.headers;
@@ -2352,7 +3149,7 @@
                 };
             }
             catch (ex) {
-                showtime.trace('Downloader: ' +ex);
+                showtime.notify('Downloader: ' +ex, 2);
                 return {
                     'response': '',
                     'headers': {},
@@ -2360,7 +3157,7 @@
                     'error': ex
                 };
             }
-        };
+        }
     }
 
     function MediaItem() 
@@ -2382,27 +3179,24 @@
         this.rating=''; //(optional) rating value
         this.infotag='';
         this.view='default'; //(optional) List view option (list, panel)
-	
-        this.GetType = function(field)
-        {
-            var index = this.type.indexOf(':');
-            var value = '';
-            if (index != -1)
-            {
-                if (field == 0)
-                    value = this.type.slice(0,index);
-                else if (field == 1)
-                    value = this.type.slice(index+1, this.type.length);
-            }
-            else
-            {
-                if (field == 0)
-                    value = this.type;
-                else if (field == 1)
-                    value = '';
-            }
-            return value;
+    }
+
+    function GetType(mediaitem, field) {
+        var index = mediaitem.type.indexOf(':');
+        var value = '';
+        if (index != -1) {
+            if (field == 0)
+                value = mediaitem.type.slice(0, index);
+            else if (field == 1)
+                value = mediaitem.type.slice(index + 1, mediaitem.type.length);
         }
+        else {
+            if (field == 0)
+                value = mediaitem.type;
+            else if (field == 1)
+                value = '';
+        }
+        return value;
     }
 
     function NIPL(mediaitem) {
@@ -2444,7 +3238,7 @@
                 'agent': '', //?
                 'referer': '',
 
-                //'cacheable': '', // Not supported in Showtime
+                //'cacheable': '',
                 'countdown_caption': '',
                 'countdown_title': '',
                 'nookies': {}, // NIPL cookies
@@ -2463,8 +3257,22 @@
     function Server() {
         this.credentials = {};
         this.user_id = '';
-        this.favorites_id = '';
-        this.history_id = '';
+        this.username = '';
+
+        this.init = function () {
+            if (user_settings) {
+                if (user_settings['nxid'] && user_settings['nxid'] != '') {
+                    this.user_id = user_settings['nxid'];
+                    showtime.trace('Found user ID');
+                }
+                if (user_settings['username'] && user_settings['username'] != '') {
+                    this.username = user_settings['username'];
+                    showtime.trace('Authenticated as: ' + this.username);
+
+                    tracking_settings.username = this.username;
+                }
+            }
+        }
 
         this.authenticated = function() {
             if (this.user_id != '')
@@ -2472,102 +3280,67 @@
             return false;
         };
 
-        this.login = function() {
+        this.login = function () {
             if(this.authenticated())      
                 return true;
                 
-            var reason = "Login required";    
+            var reason = "Login to http://navixtreme.com";    
             var do_query = false;    
             while(1) { 
-                this.credentials = plugin.getAuthCredentials("Navi-X", reason, do_query); 
+                this.credentials = plugin.getAuthCredentials("Navi-X", reason, do_query);
 
                 if(!this.credentials) {	
                     if(!do_query) {	  
                         do_query = true;	  
                         continue;
                     }	
-                    return "No credentials";      
+                    return false;
                 }      
 
-                if(this.credentials.rejected)	
-                    return "Rejected by user";   
+                if (this.credentials.rejected) {
+                    return false;
+                }
 
                 try {
-                    var v = showtime.httpPost("http://www.navixtreme.com/members/", {
-                        'action':'takelogin', 
-                        'ajax':'1', 
+                    var v = showtime.httpPost("http://www.navixtreme.com/login/", {
                         'username':this.credentials.username,
-                        'password':this.credentials.password, 
-                        'rndval':new Date().getTime()
-                    });     
-            
+                        'password':this.credentials.password
+                    });
+
                     var lines = v.toString().split("\n");
-
-                    if (lines[0] === 'ok') {
-                        this.cookie = "l_access=" + lines[1] + "; l_attempt=" + lines[2] + "; ";
-
-                        if (v.headers["Set-Cookie"])
-                            this.user_id = v.headers["Set-Cookie"].slice(5, v.headers["Set-Cookie"].indexOf(";"));
-                        
-                        if(!this.user_id) {	
-                            reason = 'Login failed, try again';	
-                            continue;      
-                        }      
-                        
-                        this.cookie += v.headers["Set-Cookie"].slice(0, v.headers["Set-Cookie"].indexOf(";"));
-                        
+                    this.user_id = lines[0];
+                    
+                    if (this.user_id != '') {
                         showtime.trace('Logged in to Navi-X as user: ' + this.credentials.username);
 
-                        // Sync IP with Navi-X server
-                        this.ipsync();
+                        user_settings['nxid'] = this.user_id;
+                        user_settings['username'] = this.credentials.username;
 
-                        // Enable/Disable Adult Content
-                        this.AdultContent(); 
-
-                        // Get ID of Favorite playlist for this user
-                        this.getPlaylistId("Favorites", true);
-
-                        // Get ID of History playlist for this user
-                        this.getPlaylistId("History", true);
-
-                        return false; 
+                        return false;
                     }
-                    else if (lines[0] === 'invalid')
+                    else {
+                        reason = "Wrong username/password.";
                         continue;
+                    }
                 }
-                catch (ex) { showtime.trace('Navixtreme: Could not log in to the website.'); return -1; }
+                catch (ex) { showtime.trace('Navixtreme: Error while authenticating user.'); continue; }
             }
         };
 
-        this.AdultContent = function() {
-            try {
-                var value = '1';
-                if (service.adult == false)
-                    value = '0';
+        this.adultContent = function () {
+            if (!this.authenticated()) return false;
 
-                var v = showtime.httpPost("http://www.navixtreme.com/members", {
-                    'action':'adult_toggle', 
-                    'value':value
-                }, null, {
-                    'cookie' : this.cookie
+            if (!user_settings['adult'] || (user_settings['adult'] != value)) {
+                var value = (service.adult) ? '1' : '0';
+                var data = showtime.httpGet("http://www.navixtreme.com/cgi-bin/adult_prefs.cgi", { 'value': value }, {
+                    'cookie': 'nxid=' + this.user_id
                 });
-                showtime.trace('Navixtreme: ' + v);
+                showtime.trace("NAVI-X: " + data);
+                user_settings['adult'] = value;
+                return true;
             }
-            catch(ex) { showtime.trace('Navixtreme: Couldn\'t enable adult content.'); }
-        }
-
-        this.ipsync = function() {
-            var v = showtime.httpPost("http://www.navixtreme.com/members/", {
-                'action':'ipsync', 
-                'rndval':new Date().getTime()
-            }, null, {
-                'cookie' : this.cookie
-            });
-
-            if (v.toString() == 'ok') {
-                showtime.trace('Navixtreme: IP synced succesfully');
-            }
-        }
+            return false;
+        };
 
         this.existInPlaylist = function(item, playlist_name) {
             var playlist_id = this.getPlaylistId(playlist_name);
@@ -2659,11 +3432,7 @@
         }
 
         this.addToPlaylist = function(playlist_name, item) {
-            var playlist_id = '';
-            if (playlist_name != 'Favorites' || playlist_name != 'History')
-                playlist_id = this.getPlaylistId(playlist_name, true);
-            else if (playlist_name === 'Favorites')
-                playlist_id = this.favorite_id;
+            var playlist_id = this.getPlaylistId(playlist_name, true);
 
             if (playlist_id == '')
                 return false;
@@ -2679,7 +3448,7 @@
                     if (it.processor === '')
                         it.processor = 'undefined';
                     if (it.URL === item.URL && it.processor === item.processor && it.thumb === item.thumb && it.description === item.description) {
-                        this.removeFromPlaylist('History', it);
+                        this.removeFromPlaylist(playlist_name, it);
                     }
                 }
             }
@@ -2715,18 +3484,18 @@
             }
         };
 
-        this.getPlaylistId = function(title, quiet) {
-            if (title == 'History' && this.history_id != '')
-                return this.history_id;
-            else if (title == 'Favorites' && this.favorites_id != '')
-                return this.favorites_id;
-
+        this.getPlaylistId = function(title, quiet, use_old) {
             var name = title.toLowerCase().replace(' ', '_');
             var playlist_id = '';
 
-            var data = showtime.httpGet('http://www.navixtreme.com/playlist/mine.plx', null, {
-                'cookie':this.cookie
-            });
+            if (!use_old) {
+                var data = showtime.httpGet('http://www.navixtreme.com/playlist/mine.plx', null, {
+                    'cookie': 'nxid=' + this.user_id
+                });
+            }
+            else {
+                var data = this.playlists_data;
+            }
 
             try {
                 //get playlist plx
@@ -2736,55 +3505,28 @@
             catch (err) {
                 showtime.trace('Navixtreme: ' + err);
 
-                var readme = false;
-                if (title == 'History' || title == 'Favorites')
-                    readme = true;
-
                 if (!quiet) {
                     //playlist plx doesn't exist
-                    if (showtime.message("You don't have any playlist with that name, do you want to create one?", true, true))
-                        playlist_id = this.createPlaylist(title, readme);
+                    if (showtime.notify("You don't have any playlist with that name, do you want to create one?", 3))
+                        playlist_id = this.createPlaylist(title);
                 }
-                else playlist_id = this.createPlaylist(title, readme);
+                else playlist_id = this.createPlaylist(title);
             }
             this[name + '_id'] = playlist_id;
+            store.add_settings_playlist(name, playlist_id);
             return playlist_id;
         }
 
-        this.createPlaylist = function(title, readme/*, description, background, logo, icon, adult*/) {
-            var visibility = service.playlistsVisibility;
-            if (service.playlistsVisibility)
-                visibility = '1';
-            else
-                visibility = '0';
-
-            if (title == 'History')
-                visibility = '1';
-
+        this.createPlaylist = function(title/*, description, background, logo, icon, adult*/) {
             var name = title.toLowerCase().replace(' ', '_') + '_id';
             this[name] = playlist_id;
 
             var playlist_id = showtime.httpPost('http://www.navixtreme.com/mylists/', {
-                'action':'list_save','background':'','description':'','icon_playlist':'','id':'','is_adult':0,'is_home':1,
-                'is_private': visibility,'logo':'','player':'','title': title,'rndval':parseInt(new Date())
+                'action':'list_save','background':'','description':'','icon_playlist':'','id':'','is_adult':0,'is_home':0,
+                'is_private': 1,'logo':'','player':'','title': title,'rndval':parseInt(new Date())
             }, null, {
                 'cookie':this.cookie
             }).toString();
-
-            if (readme) {
-                showtime.httpPost('http://www.navixtreme.com/mylists/',{
-                    'URL':'','action':'item_save','background': '','description': '','list_id': playlist_id,'list_pos':'top',
-                    'name':'Navi-X Readme','player':'','playpath':'','plugin_type':'music','processor':'','text_local':1,
-                    'this_list_id':'','thumb':'',
-                    'txt': 'Thank you for using Navi-X.\n\n'+
-                                'Any items added will be by default stored as private and will not be visible by other users!\n\n'+
-                                'You can also import and manage your favorites online using the playlist editor. See also http://www.navixtreme.com. \n\n'+
-                                'Have fun using Navi-X, from Navi-X\' Showtime Plugin\' developer facanferff',
-                    'type':'text','rndval':parseInt(new Date().getTime())
-                }, null, {
-                    'cookie':this.cookie
-                });
-            }
 
             showtime.trace('NAVI-X: ' + title + ' plx id: ' + playlist_id);
             return playlist_id;
@@ -2807,15 +3549,105 @@
             if(report_processors[url] && report_processors[url] == processor){
                 return true;
             }else{ return false; }
+        }
 
+        this.add_settings_playlist = function (name, id) {
+            if (this.exist_user_playlist(name))
+                return;
+
+            user_playlists[name] = id;
+            showtime.trace('Playlist #' + id + ' saved locally.');
+        }
+
+        this.exist_user_playlist = function (name) {
+            if (user_playlists[name] && user_playlists[name] != "") {
+                return true;
+            } else { return false; }
+        }
+
+        this.add_to_playlist = function (playlist, item) {
+            if (!item)
+                return false;
+
+            // Attempt to remove the item from playlist, if it doesn't exist the function called will return
+            this.remove_from_playlist(playlist, item);
+
+            var item1 = {};
+            if (item.type == 'playlist' || item.type == 'plx') {
+                item1 = {
+                    'type': "playlist",
+                    'version': item.version,
+                    'background': item.background,
+                    'title': item.title,
+                    'name': item.title,
+                    'thumb': item.logo,
+                    'logo': item.logo,
+                    'URL': item.path
+                }
+            }
+            else item1 = item;
+
+            var array1 = [item1];
+            try {
+                var list = eval(eval(this[playlist]).list);
+                var array = array1.concat(list);
+                this[playlist].list = showtime.JSONEncode(array);
+
+                return true;
+            }
+            catch (ex) { showtime.trace("Error while adding item to playlist: " + ex); return false; }
+        }
+
+        this.exist_in_playlist = function (playlist, item) {
+            var result = {
+                found: false,
+                id: -1,
+                supported: true
+            };
+
+            if (eval(this[playlist]).list == "[]")
+                return result;
+
+            try {
+                var list = eval(eval(this[playlist]).list);
+                for (var i in list) {
+                    if (item.name == list[i].name && item.URL == list[i].URL && item.processor == list[i].processor) {
+                        result.found = true;
+                        result.id = i;
+                        result.supported = i;
+                        return result;
+                    }
+                }
+            }
+            catch (ex) {
+                result.supported = false;
+                return result;
+            }
+            return result;
+        }
+
+        this.remove_from_playlist = function (playlist, item) {
+            if (eval(this[playlist]).list == "[]")
+                return false;
+
+            var exist = this.exist_in_playlist(playlist, item);
+            if (exist.found) {
+                var i = exist.id;
+                var list_str = eval(this[playlist]).list;
+                var list = eval(list_str);
+                list.splice(i, 1);
+                this[playlist].list = showtime.JSONEncode(list);
+                return true;
+            }
+            else return false;
         }
     }
 
     function TMDB() {
         this.key = "78d57cc453f9a284f483a0969ee65578";
 
-        this.validMovieTitle = function(title) {
-            var regex = new RegExp(/(.+?)\(([0-9]+?)\).*/);
+        /*this.validMovieTitle = function (title) {
+            var regex = new RegExp(/(.+?)\(([0-9]+?)\).*\/);
             var match = regex.exec(title);
 
             if (!match) {
@@ -2828,57 +3660,218 @@
                 showtime.trace('TMDB: Title valid, ' + t);
                 return t;
             }
-        }
+        }*/
 
-        this.searchMovie = function(title) {
+        this.searchMovie = function (title) {
+            /*var reg1 = new RegExp(/\(.*?\)/g);
+            var t = title.replace(reg1, '');*/
+            var t = title;
+            var end = t.indexOf('(');
+            if (end != -1) t = t.slice(0, end);
+
             var args = {
                 'api_key': this.key,
-                'query': escape(title),
+                'query': encodeURIComponent(t),
                 'include_adult': 'true'
 
             };
-            var data = showtime.httpGet("http://api.themoviedb.org/3/search/movie", args, {
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-            });
+            var data = showtime.httpGet("http://api.themoviedb.org/3/search/movie", args);
             data = showtime.JSONDecode(data.toString());
 
             if (parseInt(data['total_results']) > 0) {
-                showtime.trace('TMDB: Found ' + data['total_results'] +' movie entries.');
-                return data.results[0];
+                showtime.trace('TMDB: Found ' + data['total_results'] + ' movie entries.');
+                return data.results[0].id;
             }
-            else { 
+            else {
                 showtime.trace('TMDB: No movie entries found.');
                 return null;
             }
         }
 
-        this.getMovie = function(title) {
-            var t =  this.validMovieTitle(title);
-
-            if (!t)
-                return null;
-
-            var args = {
-                'api_key': this.key,
-                'query': title,
-                'include_adult': true
-            };
-
-            var item = this.searchMovie(t);
-
-            if (!item)
-                return null;
-            else {
-                var id = item.id;
-                var data = showtime.JSONDecode(showtime.httpGet("http://api.themoviedb.org/3/movie/" + id, {
+        this.getData = function (section, id, subsection) {
+            try {
+                var feature = section + "/" + id;
+                if (subsection) feature += "/" + subsection;
+                var data = showtime.JSONDecode(showtime.httpGet("http://api.themoviedb.org/3/" + feature, {
                     'api_key': this.key
-                }, {
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
                 }).toString());
 
                 return data;
             }
+            catch (ex) {
+                return null;
+            }
         }
+    }
+
+    function IMDB() {
+        this.getParentsGuide = function(id) {
+            try {
+                var data = showtime.httpGet("http://www.imdb.com/title/" + id + "/parentalguide").toString();
+                var init = data.indexOf('<div id="swiki.2.view">');
+                var end = data.indexOf('<div id="swiki_control2">');
+                data = data.slice(init, end).replace(/\r?\n/g, "");
+                var split = data.split('<div class="section">');
+                var j = 0;
+                var body = "";
+                for (var i in split) {
+                    if (i > 5)
+                        break;
+                    var item = split[i];
+                    var title = item.match("<span>(.+?)<\/span>");
+                    if (item.indexOf('<p id="swiki.2.' + (i + 1) + '.1"></p>') != -1)
+                        continue;
+                    var paragraph = item.match('<p id="swiki.2...1">(.+?)<\/p>');
+                    if (title && paragraph) {
+                        body += title[1] + "\n" + paragraph[1] + "\n\n";
+                        j++;
+                    }
+                }
+                if (j == 0) {
+                    showtime.notify("No information from Parents Guide for this movie.", 2);
+                    return false;
+                }
+                else {
+                    return body;
+                }
+            }
+            catch (ex) { showtime.notify("Error while getting Parents Guide."); return false; }
+        }
+    }
+
+    function Tracking() {
+        this.report_processor = function (processor, url, error) {
+            try {
+                var report_id = uniqid();
+                var final_id = tracking_settings.user_id + "_" + tracking_settings.username + "_" + report_id;
+                var data = showtime.httpGet("http://showtime.technocloud.cloudcontrolled.com/navix/processors/utils/xml/reports/report.php", {
+                }, {
+                    'Cookie': 'version=' + version + '; platform=Showtime ' + showtime.currentVersionString + '; user=' + server.username,
+                    'Report': report_id,
+                    'Processor': processor,
+                    'URL': url,
+                    'Error': error,
+                    'User': tracking_settings.user_id + "_" + tracking_settings.username,
+                    'Fixed': '0'
+                });
+                showtime.notify("Report Processor: " + data, 3);
+
+                reports_ids[processor + "_" + url] = report_id;
+            }
+            catch (ex) { showtime.trace("Couldn't report video"); }
+        }
+    }
+
+    function parse_string_color(text, size) {
+        var text_final = "";
+
+        var index = text.indexOf('[COLOR=FF');
+        if (index != - 1) {
+            text_final = '<font color="#ffffff" size="' + size + '">' + text.slice(0, index) + '</font>';
+            text = text.slice(index);
+            var regex = new RegExp('\\[COLOR=FF([^\\]]*)\\]([^\\[]*)\\[\/COLOR\\](.*)');
+            while(text.indexOf('[COLOR=FF') != -1)
+            {
+                index = text.indexOf('[COLOR=FF');
+                if (index > 0) {
+                    text_final += '<font color="#ffffff" size="' + size + '">' + text.slice(0, index) + '</font>';
+                    text = text.slice(index);
+                }
+
+                var match = regex.exec(text);
+
+                text_final += '<font color="' + match[1] + '" size="' + size + '">' + match[2] + '</font>';
+                text = match[3];
+            }
+         }
+        return text_final + '<font color="#ffffff" size="' + size + '">' + text + '</font>';
+    }
+
+    function ProcessorLocalFilename(url) {
+        var re_procname=new RegExp('([^/]+)$');
+        var match=re_procname.exec(url);
+        if (!match)
+            return ''
+
+        var proc = '';
+        for (var i = 1; i < match.length; i++) {
+            proc += match[i];
+        }
+
+        return escape(proc);
+    }
+
+    function uniqid(prefix, more_entropy) {
+        // +   original by: Kevin van Zonneveld (http://kevin.vanzonneveld.net)
+        // +    revised by: Kankrelune (http://www.webfaktory.info/)
+        // %        note 1: Uses an internal counter (in php_js global) to avoid collision
+        // *     example 1: uniqid();
+        // *     returns 1: 'a30285b160c14'
+        // *     example 2: uniqid('foo');
+        // *     returns 2: 'fooa30285b1cd361'
+        // *     example 3: uniqid('bar', true);
+        // *     returns 3: 'bara20285b23dfd1.31879087'
+        if (typeof prefix == 'undefined') {
+            prefix = "";
+        }
+
+        var retId;
+        var formatSeed = function (seed, reqWidth) {
+            seed = parseInt(seed, 10).toString(16); // to hex str
+            if (reqWidth < seed.length) { // so long we split
+                return seed.slice(seed.length - reqWidth);
+            }
+            if (reqWidth > seed.length) { // so short we pad
+                return Array(1 + (reqWidth - seed.length)).join('0') + seed;
+            }
+            return seed;
+        };
+
+        // BEGIN REDUNDANT
+        if (!this.php_js) {
+            this.php_js = {};
+        }
+        // END REDUNDANT
+        if (!this.php_js.uniqidSeed) { // init seed with big random int
+            this.php_js.uniqidSeed = Math.floor(Math.random() * 0x75bcd15);
+        }
+        this.php_js.uniqidSeed++;
+
+        retId = prefix; // start with prefix, add current milliseconds hex string
+        retId += formatSeed(parseInt(new Date().getTime() / 1000, 10), 8);
+        retId += formatSeed(this.php_js.uniqidSeed, 5); // add seed hex string
+        if (more_entropy) {
+            // for more entropy we add a float lower to 10
+            retId += (Math.random() * 10).toFixed(8).toString();
+        }
+
+        return retId;
+    }
+
+    function insertionSort(array, field) {
+        for (var i = 0, j, tmp; i < array.length; ++i) {
+            tmp = array[i];
+
+            for (j = i - 1; j >= 0 && array[j][field] > tmp[field]; --j)
+                array[j + 1] = array[j];
+            array[j + 1] = tmp;
+        }
+
+        return array;
+    }
+
+    function pageMenu(page) {
+        page.options.createInt('childTilesX', 'Number of X Child Tiles', 6, 1, 10, 1, '', function (v) {
+            page.metadata.childTilesX = v;
+        }, true);
+
+        page.options.createInt('childTilesY', 'Number of Y Child Tiles', 3, 1, 4, 1, '', function (v) {
+            page.metadata.childTilesY = v;
+        }, true);
+
+        page.options.createBool('informationBar', 'Information Bar', true, function (v) {
+            page.metadata.informationBar = v;
+        }, true);
     }
 	
 plugin.addURI(PREFIX + ":start", startPage);
