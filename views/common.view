@@ -1,5 +1,5 @@
 #define PLATE_GFX() {
-  .source = "theme://graphics/shadedplate.png";
+  .source = "img/shadedplate.png";
   .border = 4;
   .padding = [0, -2, 0, -2];
 }
@@ -24,7 +24,7 @@
       .alphaSelf = iir(0.5 + 0.5 * (isFocused() || isPressed()), 4);
 
       .color = [0.45, 0.45, 0.5];
-      .source = "theme://graphics/shadedplate.png";
+      .source = "img/shadedplate.png";
       .border =  [4, 4, 4, 4];
     });
   });
@@ -55,6 +55,6 @@
 #define VerticalSeparator() {
   widget(backdrop, {
     height: 10;
-    source: "theme://graphics/separator.png";
+    source: "img/separator.png";
   });
 }

@@ -1,4 +1,4 @@
-#import "theme://common.view"
+#import "../common.view"
 
 widget(container_x, {
   widget(label, {
