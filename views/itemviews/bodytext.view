@@ -1,4 +1,4 @@
-#import "../common.view"
+#import "common.view"
 
 widget(label, {
   TextStyleItem();
