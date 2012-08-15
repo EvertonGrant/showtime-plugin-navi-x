@@ -141,16 +141,6 @@ widget(container_y, {
 				.color = 1.0;
 				.sizeScale = 1.1;
 			});
-
-			widget(label, {
-				.hidden = !($clone.focused.metadata.id);
-				.caption = $clone.focused.metadata.service + " ID: " + $clone.focused.metadata.id;
-				.align = center;
-				.ellipsize = true;
-				.shadow = true;
-				.color = 1.0;
-				.sizeScale = 1.1;
-			});
 		});
 	});
 });

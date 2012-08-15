@@ -1,4 +1,17 @@
 ## Changelog
+### 1.0.5:
+- Add: Allow user set the source for playlist search in settings
+- Add: New default source for playlist search (in TMDB View)
+- Add: Support for IMDB Lists
+- Add: Search for entries from Item Menu
+- Add: Stats system
+- Fix: IMDB's Parents Guide would not show up
+- Fix: Parser PLX would join the last two items of a playlist wrongly
+- Enhacement: Improve reporting system
+
+### 1.0.1:
+- Fix: wrong imports in views
+
 ### 1.0
 #### General:
 - Add: Allow user to disable History Tracking
@@ -58,9 +71,11 @@ subtitle.pt=http://example.com
 Note 6: These features work only in the Showtime Plugin Navi-X, there's not support for those features in any other platform, including XBMC and Boxee.
 
 ## TODO
-### Processors
-- While statements
-- Multiple variable if conditions
+- Add: While statements
+- Add: Multiple variable if conditions
+- Add: List scraping features
+- Add: IMDB View (?)
+- Add: Popups on the fly (?)
 
 ## FAQ
 ### 1. Live Streams from playlists are supported in Showtime?

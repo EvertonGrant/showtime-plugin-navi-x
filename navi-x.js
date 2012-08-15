@@ -21,7 +21,7 @@
 
     var PREFIX = "navi-x";
     var plxVersion = 8;
-    var version = '1.0';
+    var version = '1.0.5';
     var nxserver_URL = "navixtreme.com";
 
     var downloader = new Downloader();
@@ -30,26 +30,31 @@
     var imdb = new IMDB();
     var server = new Server();
     var tracking = new Tracking();
+    var statistics = new Stats();
     var playlist;
   
     var home_URL = 'http://navi-x.googlecode.com/svn/trunk/Playlists/home.plx';
 
     // stores
     var report_processors = plugin.createStore('report_processors', true);
+    var stats = plugin.createStore('stats', true);
+
     var user_playlists = plugin.createStore('user_playlists', true);
     var user_settings = plugin.createStore('user_settings', true);
     var tracking_settings = plugin.createStore('tracking_settings', true);
     var reports_ids = plugin.createStore('reports_ids', true);
 
-    /*store.played_video_ids = plugin.createStore('played_video_ids', true);
-    if (!store.played_video_ids.ready) {
-        showtime.trace("Store: Played video ids empty");
-        store.played_video_ids.ready = "Ready";
-    }*/
-
     // stores - playlists
     store.history = plugin.createStore('playlists/history', true);
     store.favorites = plugin.createStore('playlists/favorites', true);
+
+    if (!stats.renew) {
+        stats.renew = new Date(new Date().valueOf() + 60 * 10 * 1000).toString();
+
+        stats.playlists = "[{title: 'Playlists', progress: true, success: 0, total: 0}]";
+        stats.processors = "[{title: 'Processors', progress: true, success: 0, total: 0}]";
+        stats.tmdb = "[{title: 'TMDB Views', progress: true, success: 0, total: 0}]";
+    }
 
     if (!tracking_settings.user_id) {
         tracking_settings.user_id = uniqid();
@@ -121,6 +126,7 @@
     settings.createDivider('Tracking Settings');
 
     settings.createBool("report_processors", "Report Automatically processors not working", true, function (v) { service.report_processors = v; });
+    settings.createBool("stats", "Stats System (quantity of failures over attempts)", true, function (v) { service.stats = v; });
     settings.createBool("historyTracking", "Enable History Tracking (local)", true, function (v) { service.historyTracking = v; });
     
     settings.createDivider('Video Settings');
@@ -132,6 +138,7 @@
     settings.createBool("tmdb_collections", "Collections", false, function (v) { service.tmdb_collections = v; });
     settings.createBool("tmdb_similarmovies", "Similar Movies", false, function (v) { service.tmdb_similarmovies = v; });
     settings.createBool("tmdb_trailers", "Trailers", false, function (v) { service.tmdb_trailers = v; });
+    settings.createString("searchSource", "Search Source", "http://www.navixtreme.com/cgi-bin/boseman/Scrapers/ct_gsearchv20?q=srcsite//", function (v) { service.searchSource = v; });
 
     settings.createDivider('IMDB Settings (TMDB View)');
 
@@ -143,6 +150,8 @@
             page.error('Your version of Showtime is outdated for this plugin. Look at https://www.lonelycoder.com/showtime/download for a new build of it.');
             return;
         }
+
+        tracking.stats();
 
         // Page Menu
         pageMenu(page);
@@ -169,134 +178,12 @@
         page.loading = false;
     });
 
-    /*plugin.addURI(PREFIX + ":tmdb:trailers:(.*)", function (page, id) {
-        page.metadata.glwview = plugin.path + "views/array.view";
-        page.type = "directory";
-
-        var items = tmdb.getData("movie", id, "trailers");
-
-        if (!items) {
-            page.error("TMDB failed to get Trailers list for this movie.");
-            return;
-        }
-
-        for (var i in items.youtube) {
-            var item = items.youtube[i];
-            page.appendItem("youtube:video:simple:Trailer:" + item.source, "video", { title: item.name + " (" + item.size + ")", icon: "http://i4.ytimg.com/vi/" + item.source + "/mqdefault.jpg" });
-        }
-
-        page.loading = false;
-    });
-
-    plugin.addURI(PREFIX + ":tmdb:cast:(.*)", function (page, id) {
-        page.metadata.glwview = plugin.path + "views/array.view";
-        page.type = "directory";
-
-        var items = tmdb.getData("movie", id, "casts");
-
-        if (!items) {
-            page.error("TMDB failed to get Cast list for this movie.");
-            return;
-        }
-
-        for (var i in items.crew) {
-            var item = items.crew[i];
-            if (item.department == "Directing") {
-                var logo = "tmdb:image:profile:" + item.profile_path;
-                if (!item.profile_path || item.profile_path == "null") logo = plugin.path + "img/nophoto.jpg";
-                page.appendItem(PREFIX + ":tmdb:person:" + item.id, "video", { title: item.name + " - " + item.job, icon: logo });
-                break;
-            }
-        }
-
-        for (var i in items.cast) {
-            var item = items.cast[i];
-            var logo = "tmdb:image:profile:" + item.profile_path;
-            if (!item.profile_path || item.profile_path == "null") logo = plugin.path + "img/nophoto.jpg";
-            page.appendItem(PREFIX + ":tmdb:person:" + item.id, "video", { title: item.name + " - " + item.character, icon: logo });
-        }
-
-        page.loading = false;
-    });*/
-
-    plugin.addURI(PREFIX + ":tmdb:person:(.*)", function (page, id) {
-        // Page Menu
-        pageMenu(page);
-
-        page.metadata.glwview = plugin.path + "views/array.view";
-        page.type = "directory";
-
-        var items = tmdb.getData("person", id, "credits");
-
-        if (!items) {
-            page.error("TMDB failed to get the credits list for this person.");
-            return;
-        }
-
-        for (var i in items.crew) {
-            var item = items.crew[i];
-            var logo = "tmdb:image:poster:" + item.poster_path;
-            if (!item.poster_path || item.poster_path == "null") logo = "img/nophoto.jpg";
-            page.appendItem(PREFIX + ":tmdb:" + item.id + ":1", "video", { title: item.title + " - " + item.job, icon: logo });
-        }
-
-        for (var i in items.cast) {
-            var item = items.cast[i];
-            var logo = "tmdb:image:poster:" + item.poster_path;
-            if (!item.poster_path || item.poster_path == "null") logo = "img/nophoto.jpg";
-            page.appendItem(PREFIX + ":tmdb:" + item.id + ":1", "video", { title: item.title + " - " + item.character, icon: logo });
-        }
-
-        page.loading = false;
-    });
-
-    /*plugin.addURI(PREFIX + ":tmdb:movie:similar:(.*)", function (page, id) {
-        page.metadata.glwview = plugin.path + "views/array.view";
-        page.type = "directory";
-
-        var items = tmdb.getData("movie", id, "similar_movies");
-
-        if (!items) {
-            page.error("TMDB failed to get the similar movies list.");
-            return;
-        }
-
-        for (var i in items.results) {
-            var item = items.results[i];
-            var logo = "tmdb:image:poster:" + item.poster_path;
-            if (!item.poster_path || item.poster_path == "null") logo = "img/nophoto.jpg";
-            page.appendItem(PREFIX + ":tmdb:" + item.id + ":1", "video", { title: item.title, icon: logo });
-        }
-
-        page.loading = false;
-    });
-
-    plugin.addURI(PREFIX + ":tmdb:collection:(.*)", function (page, id) {
-        page.metadata.glwview = plugin.path + "views/array.view";
-        page.type = "directory";
-
-        var items = tmdb.getData("collection", id);
-
-        if (!items) {
-            page.error("TMDB failed to get the collection.");
-            return;
-        }
-
-        page.metadata.background = "tmdb:image:backdrop:" + items.backdrop_path;
-        for (var i in items.parts) {
-            var item = items.parts[i];
-            var logo = "tmdb:image:poster:" + item.poster_path;
-            if (!item.poster_path || item.poster_path == "null") logo = "img/nophoto.jpg";
-            page.appendItem(PREFIX + ":tmdb:" + item.id + ":1", "video", { title: item.title, icon: logo });
-        }
-
-        page.loading = false;
-    });*/
-
     plugin.addURI(PREFIX + ":playlist:(.*):(.*)", function(page, type, url) {
         var result = -1;
 
         page.loading = true;
+
+        tracking.stats();
 
         // Page Menu
         pageMenu(page);
@@ -319,45 +206,16 @@
         page.loading = false;
 
         showtime.trace(result.message);
+
+        statistics.increment("playlists", "total");
         if (result.error)
         {
             page.error(result.errorMsg);
             return;
         }
+
+        statistics.increment("playlists", "success");
     });
-
-    /*plugin.addURI(PREFIX + ":playlist:search:(.*):(.*)", function(page, url, query) {
-        var result = -1;
-
-        // Page Menu
-        pageMenu(page);
-	
-        page.type = "directory";
-        page.metadata.glwview = plugin.path + "views/array.view";
-	
-        var mediaitem = new MediaItem();
-        mediaitem.type = "playlist";
-        mediaitem.URL = unescape(url);
-
-        playlist = new Playlist(page, mediaitem.URL, mediaitem);
-	
-        page.loading = false;
-
-        playlist.render = false;
-        result = playlist.loadPlaylist(mediaitem.URL);
-
-        for (var i in playlist.list) {
-            playlist.list[i].URL += encodeURIComponent(query);
-        }
-        playlist.showPage(mediaitem.type);
-
-        showtime.trace(result.message);
-        if (result.error)
-        {
-            page.error(result.errorMsg);
-            return;
-        }
-    });*/
 
     plugin.addURI(PREFIX + ":video:(.*):(.*):(.*):(.*)", function (page, id, title, url, proc) {
         page.type = "directory";
@@ -385,10 +243,7 @@
                 tracking.report_processor(unescape(proc), video, result.message);
             }
 
-            /*if (item.id && item.id != "") {
-                store.played_video_ids[item.id] = "Error in processing";
-                showtime.trace("Stored video id as played");
-            tmdb*/
+            statistics.increment("processors", "total");
 
             page.error(result.message);
         }
@@ -402,6 +257,9 @@
             if (proc != 'undefined' && proc != '') {
                 showtime.trace(result.message);
                 video = result.video;
+
+                statistics.increment("processors", "total");
+                statistics.increment("processors", "success");
             }
 
             var url_end = video.indexOf('|');
@@ -430,11 +288,6 @@
                 }
             }
 
-            /*if (item.id && item.id != "") {
-                store.played_video_ids[item.id] = "No processing errors found";
-                showtime.trace("Stored video id: " + store.played_video_ids[item.id]);
-            }*/
-
             showtime.trace('Any error from this point is a bug of Showtime.\nPlease wait for Showtime to load the video...', 3);
             
             page.source = "videoparams:" + showtime.JSONEncode(videoparams);
@@ -447,6 +300,8 @@
         page.type = "directory";
         page.metadata.glwview = plugin.path + "views/tmdb.view";
         page.metadata.backgroundAlpha = 0.7;
+
+        statistics.increment("tmdb", "total");
 
         query = unescape(query);
         var id = null;
@@ -557,8 +412,6 @@
 
         page.metadata.description = item.overview;
 
-        
-
         page.appendPassiveItem("label", new showtime.RichText(director), { title: "Director: " });
         page.appendPassiveItem("label", new showtime.RichText(writers), { title: "Writers: " });
         page.appendPassiveItem("label", new showtime.RichText(genres), { title: "Genres: " });
@@ -667,30 +520,26 @@
         page.loading = false;
 
         playlist.render = false;
-        var result = playlist.loadPlaylist("http://navi-x.googlecode.com/svn/trunk/networks/content_search/index.txt");
 
         var q = title;
-        /*if (page.metadata.original_title) {
-            q = item.original_title;
-        }*/
+        if (year)
+            q += " " + year;
 
+        var link = service.searchSource + encodeURIComponent(q);
+        var result = playlist.loadPlaylist(link);
         var items = [];
         for (var i in playlist.list) {
-            if (year)
-                q += " " + year;
-            if (playlist.list[i].type == "search") {
+            //if (playlist.list[i].type == "search") {
                 items.push({
                     image: playlist.list[i].thumb,
-                    title: playlist.list[i].name,
-                    url: PREFIX + ":playlist:playlist:" + escape(playlist.list[i].URL + encodeURIComponent(q)),
-                    original_url: PREFIX + ":playlist:playlist:" + escape(playlist.list[i].URL)
+                    title: playlist.list[i].name.toString().replace(/\[.*?\]/g, ''),
+                    //url: PREFIX + ":playlist:playlist:" + escape(playlist.list[i].URL + encodeURIComponent(q)),
+                    url: PREFIX + ":playlist:playlist:" + escape(playlist.list[i].URL)
                 });
-            }
+            //}
         }
 
-        //page.metadata.searchforentries = items;
-
-        var item = page.appendAction("navopen", PREFIX + ":playlist:search:" + escape("http://navi-x.googlecode.com/svn/trunk/networks/content_search/index.txt") + ":" + encodeURIComponent(title), true, {
+        page.appendAction("navopen", PREFIX + ":playlist:search:" + escape() + ":" + encodeURIComponent(q), true, {
             title: 'Search for entries',
             childTilesX: 3,
             childTilesY: 3,
@@ -721,7 +570,7 @@
             item.metadata.array = items;
         }, true);*/
 
-        if (service.imdb_parentsguide == "1" && item.imdb_id && item.imdb_id != "null") {
+        if (service.imdb_parentsguide && item.imdb_id && item.imdb_id != "null") {
             var parentsguide = imdb.getParentsGuide(item.imdb_id);
             if (parentsguide) {
                 page.appendAction("pageevent", "imdb_parentsguide", true, {
@@ -731,6 +580,8 @@
                 });
             }
         }
+
+        statistics.increment("tmdb", "success");
 
         page.loading = false;
     });
@@ -885,6 +736,11 @@
 
             if (this.path.slice(0, 8) != "store://") {
                 content = downloader.getRemote(this.path);
+
+                if (content.error) {
+                    result.error = true;
+                    return result;
+                }
             }
             else {
                 var file = eval(store[this.path.slice(8)]);
@@ -1008,12 +864,10 @@
                                     this.list.push(tmp);
                                 else //state=0                        
                                     this.list.splice(0, this.list.length);
-
-                                tmp = new MediaItem(); //create new item
-
-                                counter = counter + 1;
-                                state = 1;
                             }
+                            tmp = new MediaItem(); //create new item
+                            counter = counter + 1;
+                            state = 1;
 
                             tmp.type = value;
                             if (tmp.type == 'video' || tmp.type == 'audio') {
@@ -1640,7 +1494,9 @@
             return 0;
         }
 
-
+        /*
+            Load a playlist and if this.render == true, render to page, return one object as result
+        */
         this.loadPlaylist = function(filename) {
             var init = new Date();
 
@@ -1660,6 +1516,8 @@
                 result = this.parseRSS();
             else if (type.slice(0,4) == 'atom')
                 result = this.parseATOM();
+            else if (type == 'imdb_list')
+                result = imdb.getList(this.path);
                 /*else if (type == 'opml')
             result = playlist.load_opml_10(URL, mediaitem)
         */else //assume playlist file
@@ -1759,7 +1617,8 @@
                     if (m.type === 'window' || m.type === 'html')
                         continue;
 
-                    var icon = this.getPlEntryThumb(m);
+                    var cover = m.thumb;
+                    if (cover == "default") cover = plugin.path + "/views/img/nophoto.jpg";
 
                     var label2 = '';
                     if (m.date != '') {
@@ -1820,19 +1679,14 @@
 
                     var metadataTitle = new showtime.RichText(name_final_color);
 
-                    var seen = 0;
-                    /*if (store.played_video_ids[m.id] && store.played_video_ids[m.id] == "No processing errors found") {
-                        seen = 1;
-                    }*/
-
                     var item;
 
                     switch (m.type) {
                         case "image":
-                            item = page.appendItem(link, "image", { title: new showtime.RichText(name_final_color), icon: icon, seen: seen, info: false });
+                            item = page.appendItem(link, "image", { title: new showtime.RichText(name_final_color), icon: cover });
                             break;
                         case "audio":
-                            item = page.appendItem(link, "audio", { title: new showtime.RichText(name_final_color), icon: icon, seen: seen, info: false });
+                            item = page.appendItem(link, "audio", { title: new showtime.RichText(name_final_color), icon: cover });
                             break;
                         case "video":
                             if (link.indexOf('youtube.com') != -1) {
@@ -1840,64 +1694,54 @@
                                 var id = regex.exec(m.URL);
 
                                 item = page.appendItem('youtube:video:simple:' + escape(m.name) + ":" + escape(id[1]), "directory", {
-                                    title: metadataTitle, icon: icon, seen: seen, info: false
+                                    title: metadataTitle, icon: cover
                                 });
                             }
                             else {
                                 if (m.processor != "undefined") {
-                                    item = page.appendItem(PREFIX + ':video:' + i + ':' + escape(m.name) + ':' + escape(link) + ":" + escape(m.processor), "movie", {
+                                    item = page.appendItem(PREFIX + ':video:' + i + ':' + escape(m.name) + ':' + escape(link) + ":" + escape(m.processor), "directory", {
                                         title: metadataTitle,
-                                        icon: icon,
+                                        icon: cover,
                                         description: m.description,
-                                        seen: seen,
                                         url: link,
-                                        processor: m.processor,
-                                        info: true
+                                        processor: m.processor
                                     });
                                 }
                                 else {
                                     item = page.appendItem(link, "video", {
                                         title: metadataTitle,
-                                        icon: icon,
+                                        icon: cover,
                                         description: m.description,
-                                        seen: seen,
-                                        url: link,
-                                        info: true
+                                        url: link
                                     });
                                 }
                             }
                             break;
                         case "text":
                             item = page.appendItem(PREFIX + ':text:' + escape(m.name) + ':' + escape(m.URL), "directory", {
-                                title: new showtime.RichText(name_final_color), icon: icon, seen: seen, info: false
+                                title: new showtime.RichText(name_final_color), icon: cover
                             });
                             break;
                         case "imdb":
-                            item = page.appendItem(PREFIX + ':tmdb:' + m.ID + ':2', "video", {
+                            item = page.appendItem(PREFIX + ':tmdb:' + m.ID + ':2', "directory", {
                                 title: new showtime.RichText(name_final_color),
-                                icon: icon,
-                                seen: seen,
+                                icon: cover,
                                 id: m.ID,
-                                service: "IMDB",
-                                info: true
+                                service: "IMDB"
                             });
                             break;
                         case "tmdb":
-                            item = page.appendItem(PREFIX + ':tmdb:' + m.ID + ':1', "video", {
+                            item = page.appendItem(PREFIX + ':tmdb:' + m.ID + ':1', "directory", {
                                 title: new showtime.RichText(name_final_color),
-                                icon: icon,
-                                seen: seen,
+                                icon: cover,
                                 id: m.ID,
-                                service: "TMDB",
-                                info: true
+                                service: "TMDB"
                             });
                             break;
                         default:
                             item = page.appendItem(PREFIX + ':playlist:' + playlist_link, "directory", {
                                 title: new showtime.RichText(name_final_color),
-                                icon: icon,
-                                seen: seen,
-                                hidden: true
+                                icon: cover
                             });
                             break;
 
@@ -1912,32 +1756,12 @@
                             item.addOptURL("TMDB View", PREFIX + ':tmdb:' + m.IMDB + ":2");
                         else
                             item.addOptURL("TMDB View", PREFIX + ':tmdb:' + m.name + ":0");
-
-                        item.addOptSeparator("Playlists");
                     }
+
+                    item.addOptURL("Search for entries", PREFIX + ':playlist:playlist:' + escape(service.searchSource + encodeURIComponent(m.name)));
+
+                    item.addOptSeparator("Playlists");
                     
-                    /*item.addOptAction("Add to Playlist", "addToPlaylist");
-
-                    item.onEvent('addToPlaylist', function (item) {
-                        var titleInput = showtime.textDialog('Title of Playlist: ', true, true);
-
-                        if (titleInput.rejected) {
-                            return;
-                        }
-                        try {
-                            var title = titleInput.input;
-                            if (title.length == 0) {
-                                return;
-                            }
-
-                            if (server.addToPlaylist(title, playlist.list[this.id]))
-                                showtime.notify('Entry was added syccesfully to the playlist ' + title + '.', 3);
-                            else
-                                showtime.notify('There was one error while trying to add this entry to the playlist', 3);
-                        }
-                        catch (ex) { showtime.notify(ex); }
-                    });*/
-
                     if (m.type == "video" || m.type == "image" || m.type == "audio" || m.type == "playlist") {
                         var exist = store.exist_in_playlist('favorites', playlist.list[i]);
                         if (!exist.found)
@@ -1973,33 +1797,6 @@
                 }
             }
         }
-
-        this.getPlEntryThumb = function(mediaitem)
-        {
-            var type = GetType(mediaitem);
-
-            //some types are overruled.
-            if (type.slice(0,3) == 'rss')
-                type = 'rss';
-            else if (type.slice(0,4) == 'atom')
-                type = 'rss';
-            else if (type.slice(0,3) == 'xml')
-                type = 'playlist';
-            else if (type.slice(0,4) == 'opml')
-                type = 'playlist';
-            else if (type.slice(0,6) == 'search')
-                type = 'search';            
-            else if (type == 'directory')
-                type = 'playlist';
-            else if (type == 'window')
-                type = 'playlist';              
-				
-            //if the thumb attribute has been set then use this for the thumb.
-            if (mediaitem.thumb != 'default')
-                var URL = mediaitem.thumb;
-			
-            return URL;
-        }   
     }
 
     function Processor(mediaitem) {
@@ -3167,7 +2964,7 @@
         this.name=''; //(required) name as displayed in list view
         this.description=''; //(optional) description of this item
         this.date=''; //(optional) release date of this item (yyyy-mm-dd)
-        this.thumb='default'; //(optional) URL to thumb image or 'default'
+        this.thumb = plugin.path + "views/img/nophoto.jpg"; //(optional) URL to thumb image or 'default'
         this.icon='default'; //(optional) URL to icon image or 'default'
         this.URL=''; //(required) URL to playlist entry
         //this.DLloc=''; //(optional) Download location
@@ -3663,9 +3460,8 @@
         }*/
 
         this.searchMovie = function (title) {
-            /*var reg1 = new RegExp(/\(.*?\)/g);
-            var t = title.replace(reg1, '');*/
-            var t = title;
+            var reg1 = new RegExp(/\[(.*?)\]/g);
+            var t = title.replace(reg1, '');
             var end = t.indexOf('(');
             if (end != -1) t = t.slice(0, end);
 
@@ -3737,28 +3533,149 @@
             }
             catch (ex) { showtime.notify("Error while getting Parents Guide."); return false; }
         }
+
+        this.getList = function (link) {
+            var result = {};
+
+            try {
+                var data = showtime.httpGet(link).toString().replace(/\r?\n/, '');
+                
+                var title = data.match("<title>(.+?)</title>")[1];
+                playlist.title = title;
+
+                //page.metadata.background = "";
+
+                var split = data.split('<div class="list_item');
+                for (var i in split) {
+                    var item = split[i];
+                    var title = item.match('alt="Image of (.+?)"');
+                    var id = item.match('href="\/title\/(.+?)\/"');
+                    var cover = item.match('loadlate="(.+?)"');
+                    var year = item.match('<span class="year_type">(.+?)<\/span>');
+                    //var description = item.match('<div class="item_description">(.+?)<span>');
+                    //var rating = item.match('title="Users rated this (.+?)\/10');
+
+                    if (!title)
+                        continue;
+
+                    title = title[1];
+                    id = id[1];
+                    //description = description[1];
+                    //rating = parseFloat(rating[1]) / 2;
+
+                    if (cover)
+                        cover = cover[1];
+                    else {
+                        cover = item.match('<img src="(.*?)"');
+                        if (!cover)
+                            cover = "";
+                        else {
+                            cover = cover[1];
+                        }
+                    }
+
+                    var t = title;
+                    if (year) t += " " + year[1];
+
+                    playlist.list.push({
+                        name: t,
+                        thumb: cover,
+                        type: "imdb",
+                        ID: id,
+                        version: 8
+                    });
+                }
+
+                result.error = false;
+                return result;
+            }
+            catch (ex) {
+                showtime.trace(ex);
+                result.error = true;
+                result.errorMsg = ex;
+                return result;
+            }
+        }
     }
 
     function Tracking() {
         this.report_processor = function (processor, url, error) {
             try {
                 var report_id = uniqid();
-                var final_id = tracking_settings.user_id + "_" + tracking_settings.username + "_" + report_id;
-                var data = showtime.httpGet("http://showtime.technocloud.cloudcontrolled.com/navix/processors/utils/xml/reports/report.php", {
-                }, {
-                    'Cookie': 'version=' + version + '; platform=Showtime ' + showtime.currentVersionString + '; user=' + server.username,
-                    'Report': report_id,
-                    'Processor': processor,
-                    'URL': url,
-                    'Error': error,
-                    'User': tracking_settings.user_id + "_" + tracking_settings.username,
-                    'Fixed': '0'
+                if (tracking_settings.username)
+                    var user_id = tracking_settings.username;
+                else var user_id = tracking_settings.user_id;
+                var final_id = user_id + "_" + report_id;
+
+                var body = '<?xml version="1.0"?><reports><report><REPORT>' + report_id + '</REPORT><PROCESSOR>' + processor + '</PROCESSOR>' +
+                    '<URL>' + url + '</URL><ERROR>' + error + '</ERROR><USER>' + user_id + '</USER><FIXED>0</FIXED><VERSION>' + version + '</VERSION><SHOWTIME_VERSION>Showtime ' + showtime.currentVersionString + '</SHOWTIME_VERSION><USERNAME>' + server.username + '</USERNAME></report></reports>';
+                
+                var data = showtime.httpPost("http://showtime.technocloud.cloudcontrolled.com/navix/dev/api/reports/report.php", '', {
+                    body: body,
+                    file: final_id
                 });
-                showtime.notify("Report Processor: " + data, 3);
+                
+                showtime.notify("Report Processor: " + data, 2);
 
                 reports_ids[processor + "_" + url] = report_id;
             }
-            catch (ex) { showtime.trace("Couldn't report video"); }
+            catch (ex) { showtime.trace("Couldn't report video: " + ex); }
+        }
+
+        this.stats = function () {
+            try {
+                showtime.trace("Stats: Preparing to process stats information.");
+
+                if (!service.stats || new Date(stats['renew']).valueOf() > new Date().valueOf()) {
+                    return false;
+                }
+
+                if (tracking_settings.username)
+                    var user_id = tracking_settings.username;
+                else var user_id = tracking_settings.user_id;
+                var body = '<?xml version="1.0"?><stats><user><username>' + user_id + '</username><version>' + version + '</version><showtime>' + showtime.currentVersionString + '</showtime></user>';
+
+                showtime.trace("User ID: " + user_id);
+
+                stats.playlists; stats.processors; stats.tmdb;
+
+                for (var i in stats) {
+                    if (i == "renew")
+                        continue;
+
+                    body += "<" + i + ">";
+                    var array = eval(stats[i])[0];
+                    for (var j in array)
+                        body += "<" + j + ">" + array[j] + "</" + j + ">";
+
+                    body += "</" + i + ">";
+                }
+                body += '</stats>';
+
+                var now = new Date();
+                var data = showtime.httpPost("http://showtime.technocloud.cloudcontrolled.com/navix/dev/api/stats/stat.php", '', {
+                    body: body,
+                    file: user_id
+                });
+
+                showtime.notify("Stats: " + data, 2);
+
+                stats.renew = new Date(new Date().valueOf() + 60 * 10 * 1000).toString();
+                stats.playlists = "[{title: 'Playlists', progress: true, success: 0, total: 0}]";
+                stats.processors = "[{title: 'Processors', progress: true, success: 0, total: 0}]";
+                stats.tmdb = "[{title: 'TMDB Views', progress: true, success: 0, total: 0}]";
+            }
+            catch (ex) { showtime.trace("Couldn't report stats: " + ex); return false; }
+
+            return true;
+        }
+    }
+
+    function Stats() {
+        this.increment = function (key, item) {
+            var array = eval(stats[key])[0];
+            array[item] += 1;
+            stats[key] = "[" + showtime.JSONEncode(array) + "]";
         }
     }
 
