@@ -48,12 +48,13 @@
     store.history = plugin.createStore('playlists/history', true);
     store.favorites = plugin.createStore('playlists/favorites', true);
 
-    if (!stats.renew) {
+    if (!stats.init) {
         stats.renew = new Date(new Date().valueOf() + 60 * 10 * 1000).toString();
 
-        stats.playlists = "[{title: 'Playlists', progress: true, success: 0, total: 0}]";
-        stats.processors = "[{title: 'Processors', progress: true, success: 0, total: 0}]";
-        stats.tmdb = "[{title: 'TMDB Views', progress: true, success: 0, total: 0}]";
+        stats.playlists = "[{title: 'Playlists', progress: true}]";
+        stats.processors = "[{title: 'Processors', progress: true}]";
+        stats.tmdb = "[{title: 'TMDB Views', progress: true}]";
+        stats.init = "true";
     }
 
     if (!tracking_settings.user_id) {
@@ -196,12 +197,7 @@
         mediaitem.URL = unescape(url);
 
         playlist = new Playlist(page, mediaitem.URL, mediaitem);
-	
-        if (mediaitem.type.slice(0,6) == 'search') {
-            result = playlist.parseSearch();
-        }
-        else
-            result = playlist.loadPlaylist(mediaitem.URL);
+	    result = playlist.loadPlaylist(mediaitem.URL);
 
         page.loading = false;
 
@@ -710,7 +706,7 @@
                 this.mediaitem.type = 'rss:video';
                 this.mediaitem.name = 'search results: ' + searchstring;
                 this.mediaitem.processor = this.mediaitem.processor;
-                this.loadPlaylist(this.mediaitem.URL);
+                return this.loadPlaylist(this.mediaitem.URL);
             }
             else { //generic search
                 fn = searchstring.replace(/ /g,'+');   
@@ -724,7 +720,7 @@
 					
                 this.mediaitem.name = 'search results: ' + searchstring;
                 this.mediaitem.processor = this.mediaitem.processor;
-                this.loadPlaylist(this.mediaitem.URL);
+                return this.loadPlaylist(this.mediaitem.URL);
             }
 
             return -1;
@@ -1518,6 +1514,8 @@
                 result = this.parseATOM();
             else if (type == 'imdb_list')
                 result = imdb.getList(this.path);
+            else if (type == 'search')
+                result = this.parseSearch();
                 /*else if (type == 'opml')
             result = playlist.load_opml_10(URL, mediaitem)
         */else //assume playlist file
@@ -1530,6 +1528,9 @@
 
             var end = new Date();
             var time = end - init;
+
+            statistics.average("playlists", "average_time", time);
+            statistics.limit("playlists", time);
 
             result.message = 'NAVI-X: Parsed playlist succesfully (' + time + 'ms).';
 				
@@ -3098,6 +3099,14 @@
                     return false;
                 }
 
+                if (this.credentials.username == "" || this.credentials.password == "") {
+                    if (!do_query) {
+                        do_query = true;
+                        continue;
+                    }
+                    return false;
+                }
+
                 try {
                     var v = showtime.httpPost("http://www.navixtreme.com/login/", {
                         'username':this.credentials.username,
@@ -3113,14 +3122,14 @@
                         user_settings['nxid'] = this.user_id;
                         user_settings['username'] = this.credentials.username;
 
-                        return false;
+                        return true;
                     }
                     else {
                         reason = "Wrong username/password.";
                         continue;
                     }
                 }
-                catch (ex) { showtime.trace('Navixtreme: Error while authenticating user.'); continue; }
+                catch (ex) { showtime.trace('Navixtreme: Error while authenticating user.'); return false; }
             }
         };
 
@@ -3674,7 +3683,35 @@
     function Stats() {
         this.increment = function (key, item) {
             var array = eval(stats[key])[0];
+
+            if (!array[item]) array[item] = 0;
+
             array[item] += 1;
+            stats[key] = "[" + showtime.JSONEncode(array) + "]";
+        }
+
+        this.average = function (key, item, value) {
+            var array = eval(stats[key])[0];
+
+            if (!array[item]) array[item] = 0;
+
+            if (array[item] == 0) array[item] = value;
+            else array[item] = Math.floor( ( array[item] + value) / 2 );
+            stats[key] = "[" + showtime.JSONEncode(array) + "]";
+        }
+
+        this.limit = function (key, value) {
+            var array = eval(stats[key])[0];
+
+            if (!array["maximum"]) array["maximum"] = 0;
+            if (!array["minimum"]) array["minimum"] = 0;
+
+            if (array["maximum"] == 0) array["maximum"] = value;
+            if (array["minimum"] == 0) array["minimum"] = value;
+
+            if (array["maximum"] < value) array["maximum"] = value;
+            else if (array["minimum"] > value) array["minimum"] = value;
+
             stats[key] = "[" + showtime.JSONEncode(array) + "]";
         }
     }

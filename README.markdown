@@ -1,4 +1,7 @@
 ## Changelog
+### 1.0.6:
+- Fix: Continuous login requests
+
 ### 1.0.5:
 - Add: Allow user set the source for playlist search in settings
 - Add: New default source for playlist search (in TMDB View)
