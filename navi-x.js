@@ -21,7 +21,7 @@
 
     var PREFIX = "navi-x";
     var plxVersion = 8;
-    var version = '1.0.5';
+    var version = '1.0.6';
     var nxserver_URL = "navixtreme.com";
 
     var downloader = new Downloader();
