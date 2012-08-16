@@ -3143,7 +3143,6 @@
                 var data = showtime.httpGet("http://www.navixtreme.com/cgi-bin/adult_prefs.cgi", { 'value': value }, {
                     'cookie': 'nxid=' + this.user_id,
                     'User-Agent': 'Showtime Navi-X ' + version 
-                }
                 });
                 showtime.trace("NAVI-X: " + data);
                 user_settings['adult'] = value;
