@@ -3111,6 +3111,8 @@
                     var v = showtime.httpPost("http://www.navixtreme.com/login/", {
                         'username':this.credentials.username,
                         'password':this.credentials.password
+                    }, {}, {
+                        'User-Agent': 'Showtime Navi-X ' + version 
                     });
 
                     var lines = v.toString().split("\n");
@@ -3139,7 +3141,9 @@
             if (!user_settings['adult'] || (user_settings['adult'] != value)) {
                 var value = (service.adult) ? '1' : '0';
                 var data = showtime.httpGet("http://www.navixtreme.com/cgi-bin/adult_prefs.cgi", { 'value': value }, {
-                    'cookie': 'nxid=' + this.user_id
+                    'cookie': 'nxid=' + this.user_id,
+                    'User-Agent': 'Showtime Navi-X ' + version 
+                }
                 });
                 showtime.trace("NAVI-X: " + data);
                 user_settings['adult'] = value;
